@@ -1,3 +1,13 @@
+.dropzone {
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: space-around;
+}
+
+.dropzone__item {
+    padding: 1em;
+}
+
 .dropzone__target {
     display: flex;
     position: relative;
@@ -8,15 +18,16 @@
     width: 400px;
     height: 400px;
     color: #c9c9c9;
+    overflow: hidden; /* don't know why yet, but some resized thumbnails can still overflow, so we prevent this in CSS */
 }
 
-.dz-drag-hover .dropzone__target,
+.dropzone__target--dragover,
 .dropzone__target:hover {
     cursor: pointer;
     color: #000;
 }
 
-.dz-max-files-reached .dropzone__upload-invitation {
+.dropzone__item--fileadded .dropzone__upload-invitation {
     display: none;
 }
 
@@ -46,7 +57,7 @@
     opacity: 0.5;
 }
 
-.dz-max-files-reached .dropzone__target:hover .dropzone__edit {
+.dropzone__item--fileadded .dropzone__target:hover .dropzone__edit {
     display: flex;
     justify-content: center;
     align-items: center;

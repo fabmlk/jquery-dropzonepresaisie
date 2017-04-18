@@ -33,6 +33,22 @@
             // If the array length is < numFiles or the array contains falsy values, this default text
             // is used as a replacement.
             uploadInvitation: "Déposez ou sélectionnez votre fichier",
+            // function that prompts the user about page dispatch if pdf's num pages is > numFiles
+            // @param {Object} o - object of the form
+            //                     {
+            //                       target: <jQuery object to the .dropzone__target node that selected the pdf>
+            //                       numPages: <number of pages in the pdf>
+            //                     }
+            // @param {Function} (Optional) done - callback to call with an object of the form
+            //                     {
+            //                       numPage <Integer representing a page number (1-based)>: <jQuery object to the .dropzone__target node that should display this specific page>
+            //                       ...
+            //                     }
+            // done() is optional if a promise is returned instead, resolved with the same parameter as the done() callback.
+            // By default, we simply display the first page inside the current target
+            promptPages: function (o, done) {
+                done({1: o.target});
+            },
 
 
             /* Dropzone plugin options */
@@ -67,15 +83,17 @@
 
         /**
          * Retreive the dropzone instance from our container.
-         * @param $container
+         * @param {jQuery} $container
          * @returns {Object} the dropzone instance
          */
         function getDropzone($container) {
             return Dropzone.forElement($container.get(0));
         }
 
-        function renderPage(pdf, numPage, $canvas) {
+
+        function renderPage(pdf, numPage, $canvas, $container) {
             var canvas = $canvas.get(0);
+            var instance = getDropzone($container);
 
             pdf.getPage(numPage).then(function (page) {
                 var unscaledViewport = page.getViewport(1);
@@ -117,40 +135,40 @@
          * Render pdf thumbnail
          * @param {Object} PDFJS - PDF.js instance
          * @param {File} file
-         * @param {jQuery} $canvas - the wrapped canvas element where to display the pdf
+         * @param {jQuery} $target - the wrapped .dropzone__target where to display the pdf
          * @param {jQuery} $container - our custom closured plugin container
          */
-        function renderPdf(PDFJS, file, $canvas, $container) {
+        function renderPdf(PDFJS, file, $target, $container) {
             var instance = getDropzone($container);
 
             PDFJS.getDocument(URL.createObjectURL(file)).then(function (pdf) {
                 if (pdf.numPages > 1) {
-                    if (instance.options.maxFiles !== pdf.numPages) {
-                        var promptDfd = $.Deferred();
+                    var promptDfd = $.Deferred();
 
-                        var ret = instance.options.promptPages({
-                            target: $canvas.closest(".dropzone__target"),
-                            numPages: pdf.numPages
-                        }, function (pageMap) {
-                            promptDfd.resolve(pageMap);
-                        });
-                        if (ret && typeof ret.then === "function") {
-                            promptDfd = ret;
-                        }
-                        promptDfd.then(function (pageMaps) {
-                            var error = new Error("Expected array of the form {numPage: target node, ...}");
-                            if (!$.isPlainObject(pageMaps)) {
-                                throw error;
-                            }
-                            pageMaps.forEach(function (numPage, node) {
-                                 renderPage(pdf, numPage, $(node));
-                            });
-                        });
-                    } else {
-                        renderPage(pdf, 1, $canvas);
+                    var ret = instance.options.promptPages({
+                        target: $target,
+                        numPages: pdf.numPages
+                    }, function (pageMap) {
+                        promptDfd.resolve(pageMap);
+                    });
+                    if (ret && typeof ret.then === "function") { // we got a promise
+                        promptDfd = ret;
                     }
+                    promptDfd.then(function (pageMaps) {
+                        if (!$.isPlainObject(pageMaps)) {
+                            throw new Error("Expected array of the form {numPage: target node, ...}");
+                        }
+                        $.each(pageMaps, function (numPage, target) {
+                            // target can be either a DOM node or jQuery wrapper.
+                            // Double wrapping is fine for jQuery anyway
+                            renderPage(pdf, parseInt(numPage, 10), $(target).find("canvas"), $container);
+                        });
+                    }).catch(function (e) {
+                        alert(e);
+                    });
+                } else { // only one page
+                    renderPage(pdf, 1, $target.find("canvas"), $container);
                 }
-
             });
         }
 
@@ -241,7 +259,7 @@
             if (!$.isArray(finalOptions.uploadInvitation)) {
                 finalOptions.uploadInvitation = [finalOptions.uploadInvitation];
             }
-            for(var i = 0; i < finalOptions.maxFiles; i++) {
+            for (var i = 0; i < finalOptions.maxFiles; i++) {
                 finalOptions.uploadInvitation[i] = finalOptions.uploadInvitation[i] || defaults.uploadInvitation;
             }
 
@@ -274,15 +292,24 @@
             if (lastTargetClickedOrDropped == null) {
                 return;
             }
-            var $item = $(lastTargetClickedOrDropped).parents(".dropzone__item");
+            var $item = $(lastTargetClickedOrDropped).closest(".dropzone__item");
             var instance = getDropzone($container);
+
+            $item.find(".dropzone__size").text(file.size);
+            $item.find(".dropzone__filename").text(file.name);
+            $item.addClass("dropzone__item--fileadded"); // this will hide upload-invitation and add the edit zone overlay
 
             if (file.type.indexOf("image") !== -1) {
                 var image = $item.find("img").get(0);
                 image.alt = file.name;
                 image.src = dataUrl;
             } else if (file.type.indexOf("pdf") !== -1) {
-                renderPdf(instance.options.PDFJS, file, $item.find("canvas"), $container);
+                try {
+                    renderPdf(instance.options.PDFJS, file, $item.find(".dropzone__target"), $container);
+                } catch (e) {
+                    alert(e);
+                }
+
             }
         }
 
@@ -291,13 +318,13 @@
          * Note: Dropzone adds the file to its queue before accepting it. Acceptance will simply determine
          * the file's status to be uploaded or not. When this function is called, file has status "ADDED".
          *
-         * Why override: its default performs pure UI logic that does not map to ours.
+         * Why override: its default performs pure UI logic that we don't want to reproduce.
          *
          * @param {File} file
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionAddedfile(file, $container) {
-            var $item = $(lastTargetClickedOrDropped).parents(".dropzone__item");
+            var $item = $(lastTargetClickedOrDropped).closest(".dropzone__item");
             var instance = getDropzone($container);
             var currentFile = $item.data("file");
 
@@ -307,11 +334,7 @@
             }
             $item.data("file", file);
 
-            $item.find(".dropzone__size").text(file.size);
-            $item.find(".dropzone__filename").text(file.name);
-            $item.addClass("dropzone__item--fileadded");
-
-            if (file.type.indexOf("pdf") !== -1 && typeof instance.options.PDFJS === "object" ) {
+            if (file.type.indexOf("pdf") !== -1 && typeof instance.options.PDFJS === "object") {
                 // Dropzone displays thumbnails asynchronously. We respect this for PDF rendering too.
                 setTimeout(function () {
                     instance.options.thumbnail(file, null);
@@ -386,29 +409,12 @@
                 $(this).removeClass("dropzone__target--dragover");
             });
 
-            instance.on("removedfile", function (file) {
+            instance.on("removedfile", function () {
                 var $lastTargetClickedOrDropped = $(lastTargetClickedOrDropped);
+                $lastTargetClickedOrDropped.closest(".dropzone__item").removeClass("dropzone__item--fileadded");
                 $(".dropzone__preview canvas", $lastTargetClickedOrDropped).attr({width: 0, height: 0});
                 $(".dropzone__preview img", $lastTargetClickedOrDropped).removeAttr("src").removeAttr("alt");
             });
-            //
-            // instance.on("addedfile", function (file) {
-            //     // remove all currently accepted files <=> this file will replace the previous one
-            //     // (we still iterate as if there were multiple accpted files here, but with maxFiles = 1 we know there can only be just 1 currently accepted)
-            //     // We do so because Dropzone.js still enqueues files and display their thumbnails even though maxFiles exceeded (but they won't ever be considered for upload).
-            //     // This is counterintuitive and is discussed here: https://github.com/enyo/dropzone/issues/951
-            //     // By attaching to the 'addedfile' event early instead of 'maxfilesexceeded', we prevent Dropzone from ever updating the UI
-            //     // (as UI is updated before 'maxfilesexceeded')
-            //     // $.each(idDropzone.getAcceptedFiles(), function (_, file) {
-            //     //     idDropzone.removeFile(file);
-            //     // });
-            //
-            //     if (file.type.indexOf("pdf") !== -1) {
-            //         if (instance.options.PDFJS) { // PDFJS was passed on
-            //             renderPdf(PDFJS, file, $container);
-            //         }
-            //     }
-            // });
         }
 
         /**
