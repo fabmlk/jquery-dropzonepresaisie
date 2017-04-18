@@ -9,7 +9,7 @@
   "author": "fabien lanoux",
   "license": "ISC",
   "dependencies": {
-    "dropzone": "^4.3.0"
+    "dropzone": "~4.3.0"
   },
   "devDependencies": {},
   "repository": {

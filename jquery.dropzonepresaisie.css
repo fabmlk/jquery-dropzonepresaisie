@@ -1,0 +1,59 @@
+.dropzone__target {
+    display: flex;
+    position: relative;
+    margin: auto;
+    justify-content: center;
+    align-items: center;
+    border: dashed 3px;
+    width: 400px;
+    height: 400px;
+    color: #c9c9c9;
+}
+
+.dz-drag-hover .dropzone__target,
+.dropzone__target:hover {
+    cursor: pointer;
+    color: #000;
+}
+
+.dz-max-files-reached .dropzone__upload-invitation {
+    display: none;
+}
+
+.dropzone__upload-invitation {
+    display: block;
+    text-align: center;
+    font-size: 1.2em;
+}
+
+
+
+.dropzone__upload-invitation::before {
+    display: block;
+    font-size: 5em;
+    text-align: center;
+    color: inherit;
+}
+
+.dropzone__edit {
+    position: absolute;
+    display: none;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 0, 0, 0.5);
+    opacity: 0.5;
+}
+
+.dz-max-files-reached .dropzone__target:hover .dropzone__edit {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: auto;
+}
+
+.dropzone__delete,
+.dropzone__exchange {
+    cursor: pointer;
+}
