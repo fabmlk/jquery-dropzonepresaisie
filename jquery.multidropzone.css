@@ -1,14 +1,14 @@
-.dropzone {
+.multidropzone {
     display: flex;
     flex-flow: row wrap;
     justify-content: space-around;
 }
 
-.dropzone__item {
+.multidropzone__item {
     padding: 1em;
 }
 
-.dropzone__target {
+.multidropzone__target {
     display: flex;
     position: relative;
     margin: auto;
@@ -21,17 +21,17 @@
     overflow: hidden; /* don't know why yet, but some resized thumbnails can still overflow, so we prevent this in CSS */
 }
 
-.dropzone__target--dragover,
-.dropzone__target:hover {
+.multidropzone__target--dragover,
+.multidropzone__target:hover {
     cursor: pointer;
     color: #000;
 }
 
-.dropzone__item--fileadded .dropzone__upload-invitation {
+.multidropzone__item--fileadded .multidropzone__upload-invitation {
     display: none;
 }
 
-.dropzone__upload-invitation {
+.multidropzone__upload-invitation {
     display: block;
     text-align: center;
     font-size: 1.2em;
@@ -39,14 +39,14 @@
 
 
 
-.dropzone__upload-invitation::before {
+.multidropzone__upload-invitation::before {
     display: block;
     font-size: 5em;
     text-align: center;
     color: inherit;
 }
 
-.dropzone__edit {
+.multidropzone__edit {
     position: absolute;
     display: none;
     top: 0;
@@ -57,14 +57,14 @@
     opacity: 0.5;
 }
 
-.dropzone__item--fileadded .dropzone__target:hover .dropzone__edit {
+.multidropzone__item--fileadded .multidropzone__target:hover .multidropzone__edit {
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: auto;
 }
 
-.dropzone__delete,
-.dropzone__exchange {
+.multidropzone__delete,
+.multidropzone__exchange {
     cursor: pointer;
 }

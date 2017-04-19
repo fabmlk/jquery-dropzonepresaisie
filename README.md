@@ -1,1 +1,1 @@
-# jquery-dropzonepresaisie
+# jquery-multidropzone

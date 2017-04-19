@@ -25,7 +25,7 @@
         var lastTargetClickedOrDropped = null;
 
         var defaults = {
-            /* Custom options */
+            /**** Custom options ****/
 
             numFiles: 1, // number of files to handle
             // html content to display inside the .dropzone__upload-invitation nodes of the drop targets.
@@ -36,7 +36,7 @@
             // function that prompts the user about page dispatch if pdf's num pages is > numFiles
             // @param {Object} o - object of the form
             //                     {
-            //                       target: <jQuery object to the .dropzone__target node that selected the pdf>
+            //                       item: <jQuery object to the .dropzone__item node that selected the pdf or the node itself>
             //                       numPages: <number of pages in the pdf>
             //                     }
             // @param {Function} (Optional) done - callback to call with an object of the form
@@ -47,21 +47,21 @@
             // done() is optional if a promise is returned instead, resolved with the same parameter as the done() callback.
             // By default, we simply display the first page inside the current target
             promptPages: function (o, done) {
-                done({1: o.target});
+                done({1: o.item});
             },
 
 
-            /* Dropzone plugin options */
+            /**** Dropzone plugin options ****/
 
             // do not upload on file selection
             autoProcessQueue: false,
             // mime types allowed
             acceptedFiles: "image/*, application/pdf",
-            // trick: used online html to string formatter http://pojo.sodhanalibrary.com/string.html
+            // trick: used online html-to-string formatter http://pojo.sodhanalibrary.com/string.html
             previewTemplate: '' +
             '<div class="dropzone__item">' +
             '	<div class="dropzone__target">' +
-            '		<div class="dropzone__upload-invitation fa fa-upload dz-message" aria-hidden="true">' +
+            '		<div class="dropzone__upload-invitation fa fa-upload" aria-hidden="true">' +
             '		</div>' +
             '		<div class="dropzone__preview">' +
             '			<img />' +
@@ -79,7 +79,12 @@
             '</div>'
         };
 
-        /** utils function **/
+
+
+
+
+
+        /******************** utils function *********************/
 
         /**
          * Retreive the dropzone instance from our container.
@@ -91,11 +96,18 @@
         }
 
 
-        function renderPage(pdf, numPage, $canvas, $container) {
+        /**
+         * Render a specific PDF page number inside a specific canvas.
+         * @param {Object} pdf
+         * @param {Integer} numPage
+         * @param {jQuery} $canvas
+         * @param {jQuery} $container
+         */
+        function renderPage(pdf, pageIndex, $canvas, $container) {
             var canvas = $canvas.get(0);
             var instance = getDropzone($container);
 
-            pdf.getPage(numPage).then(function (page) {
+            pdf.getPage(pageIndex).then(function (page) {
                 var unscaledViewport = page.getViewport(1);
                 // calculate the target width and height we want for the pdf:
                 // resize() needs as argument any object with .width and .height attributes,
@@ -135,10 +147,10 @@
          * Render pdf thumbnail
          * @param {Object} PDFJS - PDF.js instance
          * @param {File} file
-         * @param {jQuery} $target - the wrapped .dropzone__target where to display the pdf
+         * @param {jQuery} $item - the wrapped .dropzone__item element where to display the pdf
          * @param {jQuery} $container - our custom closured plugin container
          */
-        function renderPdf(PDFJS, file, $target, $container) {
+        function renderPdf(PDFJS, file, $item, $container) {
             var instance = getDropzone($container);
 
             PDFJS.getDocument(URL.createObjectURL(file)).then(function (pdf) {
@@ -146,7 +158,7 @@
                     var promptDfd = $.Deferred();
 
                     var ret = instance.options.promptPages({
-                        target: $target,
+                        item: $item,
                         numPages: pdf.numPages
                     }, function (pageMap) {
                         promptDfd.resolve(pageMap);
@@ -156,21 +168,32 @@
                     }
                     promptDfd.then(function (pageMaps) {
                         if (!$.isPlainObject(pageMaps)) {
-                            throw new Error("Expected array of the form {numPage: target node, ...}");
+                            throw new Error("Expected object of the form {<numPage>: <target node>, ...}");
                         }
 
-                        file.pageTargetList = file.pageTargetList || [];
+                        file.pageMaps = $.extend({}, pageMaps); // save copy of pageMaps inside the file. See defaults options.
 
-                        $.each(pageMaps, function (numPage, target) {
+                        // render each page as specified by pageMaps and keep some state inside the $item container
+                        $.each(pageMaps, function (numPage, item) {
+                            var numPage = parseInt(numPage, 10);
+
                             // target can be either a DOM node or jQuery wrapper.
                             // Double wrapping is fine for jQuery anyway
-                            $target = $(target);
+                            $item = $(item);
 
-                            renderPage(pdf, parseInt(numPage, 10), $target.find("canvas"), $container);
-                            file.pageTargetList.push($target);
+                            if (!$item.hasClass("dropzone__item")) {
+                                throw new Error("Expected item to have a class of 'dropzone__item'");
+                            }
+
+                            // each page appears inside its own item. We simulate multiple files to the user when
+                            // there is only just one.
+                            renderPage(pdf, numPage, $item.find("canvas"), $container);
+
+                            // each $item will keep an instance of the file so we can know from here where pages are being dispatched.
+                            // So when a file will be replaced or removed, we can retreive its file instance and run through
+                            // all pageMaps to discard the other instances and reset the UI.
+                            addFileToItem(file, $item, $container)(file.size, file.name + ' (page n°' + numPage + ')');
                         });
-                    }).catch(function (e) {
-                        alert(e);
                     });
                 } else { // only one page
                     renderPage(pdf, 1, $target.find("canvas"), $container);
@@ -199,12 +222,11 @@
                  */
                 drop: function (e) {
                     var instance = getDropzone($container);
-                    // get the .dropzone__target associated to the drop, taking into account bubbling
-                    // check e.target is a dropzone__target itself or has a dropzone__target parent
-                    var match = $(e.target).closest(".dropzone__target");
+                    // get the .dropzone__item associated to the drop, taking into account bubbling
+                    var $item = $(e.target).closest(".dropzone__item");
 
-                    if (match.length) {
-                        lastTargetClickedOrDropped = match.get(0);
+                    if ($item.length) {
+                        lastTargetClickedOrDropped = $item.get(0);
                         Dropzone.prototype.drop.call(instance, e);
                     } else {
                         lastTargetClickedOrDropped = null;
@@ -245,7 +267,13 @@
                 },
                 init: optionInit.bind(null, $container), // save $container inside closure
                 thumbnail: function (file, dataUrl) { // save $container inside closure
-                    return optionThumbnail(file, dataUrl, $container);
+                    if (dataUrl) {
+                        file.url = dataUrl;
+                    } else {
+                        file.url = URL.createObjectURL(file);
+                    }
+
+                    return optionThumbnail(file, $container);
                 },
                 addedfile: function (file) { // save $container inside closure
                     return optionAddedfile(file, $container);
@@ -279,7 +307,81 @@
         }
 
 
-        /** option overrides functions **/
+        /**
+         * Add the file to the item, replaçing the current one if any.
+         * The first step is reseting the UI. The second step is to update the UI with file information.
+         * This is done by returning an updater to call whenever ready.
+         *
+         * @param {File} file
+         * @param {jQuery} $item
+         * @param {jQuery} $container - our custom closured plugin container
+         * @returns {Function} File Info UI updater ({String} size: the size of the file, {String} name: the name of the file)
+         */
+        function addFileToItem(file, $item, $container) {
+            var instance = getDropzone($container);
+            var currentFile = $item.data("file");
+
+            // replace the currentFile
+            if (currentFile) {
+                $.each(currentFile.pageMaps || [$item.get(0)], function (_, nextItem) {
+                    $item.removeClass("dropzone__item--fileadded");
+                    $(".dropzone__preview canvas", $item).attr({width: 0, height: 0});
+                    $(".dropzone__preview img", $item).removeAttr("src").removeAttr("alt");
+                    $item.find(".dropzone__size, .dropzone__filename").text('');
+                    $item.removeData("file");
+                });
+
+                // tells Dropzone about its removal.
+                // Note that this removal may have actually happened earlier inside optionAddedFile.
+                // If we try to remove a file that does not exist anymore, Dropzone does not care, so we're safe here.
+                instance.removeFile(currentFile);
+            }
+
+            $item.data("file", file);
+
+            return function (size, name) {
+                $item.find(".dropzone__size").text(size);
+                $item.find(".dropzone__filename").text(name);
+                $item.addClass("dropzone__item--fileadded"); // this will hide upload-invitation and add the edit zone overlay
+            };
+        }
+
+
+        /**
+         * Get a thumbnail renderer based on file's mime type.
+         * @param {String} mimeType
+         * @returns {Function} ({File} file, {jQuery} $container)
+         */
+        function getThumbnailRendererFromMimeType(mimeType) {
+            if (lastTargetClickedOrDropped == null) {
+                return $.noop;
+            }
+
+            var $item = $(lastTargetClickedOrDropped);
+
+            if (mimeType.indexOf("image") !== -1) {
+                return function (file, $container) { // image renderer
+                    var image = $item.find("img").get(0);
+
+                    addFileToItem(file, $item, $container)(file.size, file.name);
+
+                    image.alt = file.name;
+                    image.src = file.url;
+                };
+            } else if (mimeType.indexOf("pdf") !== -1) {
+                return function (file, $container) { // pdf renderer
+                    var instance = getDropzone($container);
+
+                    renderPdf(instance.options.PDFJS, file, $item, $container);
+                };
+            }
+        }
+
+
+
+
+
+        /******************* option overrides functions ******************/
 
         /**
          * Called by Dropzone to tell its intention to display the thumbnail after:
@@ -291,33 +393,19 @@
          *               We want our previewTemplate to be Dropzone-agnostic and reuse it for Pdf display as well.
          *
          * @param {File} file
-         * @param {String} dataUrl
          * @param {jQuery} $container - our custom closured plugin container
          */
-        function optionThumbnail(file, dataUrl, $container) {
-            if (lastTargetClickedOrDropped == null) {
-                return;
-            }
-            var $item = $(lastTargetClickedOrDropped).closest(".dropzone__item");
-            var instance = getDropzone($container);
+        function optionThumbnail(file, $container) {
+            var renderer = getThumbnailRendererFromMimeType(file.type);
 
-            $item.find(".dropzone__size").text(file.size);
-            $item.find(".dropzone__filename").text(file.name);
-            $item.addClass("dropzone__item--fileadded"); // this will hide upload-invitation and add the edit zone overlay
-
-            if (file.type.indexOf("image") !== -1) {
-                var image = $item.find("img").get(0);
-                image.alt = file.name;
-                image.src = dataUrl;
-            } else if (file.type.indexOf("pdf") !== -1) {
-                try {
-                    renderPdf(instance.options.PDFJS, file, $item.find(".dropzone__target"), $container);
-                } catch (e) {
-                    alert(e);
-                }
-
+            try {
+                renderer(file, $container);
+            } catch(e) {
+                alert(e);
             }
         }
+
+
 
         /**
          * Called by Dropzone once a file has been selected or dropped (input type file onchange event).
@@ -330,23 +418,23 @@
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionAddedfile(file, $container) {
-            var $item = $(lastTargetClickedOrDropped).closest(".dropzone__item");
             var instance = getDropzone($container);
-            var currentFile = $item.data("file");
+            var currentFile = $(".dropzone__item", $container).data('file');
 
-            // replace the currentFile
             if (currentFile) {
-                instance.removeFile(currentFile);
+                instance.removeFile(currentFile); // tells Dropzone about its removal
             }
-            $item.data("file", file);
 
-            if (file.type.indexOf("pdf") !== -1 && typeof instance.options.PDFJS === "object") {
+            if (file.type.indexOf("pdf") !== -1 && typeof instance.options.PDFJS === "object") { // We can render PDFs
                 // Dropzone displays thumbnails asynchronously. We respect this for PDF rendering too.
                 setTimeout(function () {
                     instance.options.thumbnail(file, null);
                 }, 0);
             }
+            // else if images, Dropzone will trigger a call to thumbnail for us
         }
+
+
 
         /**
          * Called by Dropzone to calculate the thumbnail size after:
@@ -370,8 +458,9 @@
          *     }
          */
         function optionResize(file) {
-            var maxWidth = $(lastTargetClickedOrDropped).width();
-            var maxHeight = $(lastTargetClickedOrDropped).height();
+            var $target = $(lastTargetClickedOrDropped).find(".dropzone__target");
+            var maxWidth = $target.width();
+            var maxHeight = $target.height();
             var width = file.width;
             var height = file.height;
 
@@ -408,18 +497,11 @@
 
             // init events
             $(".dropzone__target", $container).on("click", function () {
-                lastTargetClickedOrDropped = this;
+                lastTargetClickedOrDropped = $(this).closest(".dropzone__item");
             }).on("dragover dragenter", function () {
                 $(this).addClass("dropzone__target--dragover");
             }).on("dragend dragleave drop", function () {
                 $(this).removeClass("dropzone__target--dragover");
-            });
-
-            instance.on("removedfile", function () {
-                var $lastTargetClickedOrDropped = $(lastTargetClickedOrDropped);
-                $lastTargetClickedOrDropped.closest(".dropzone__item").removeClass("dropzone__item--fileadded");
-                $(".dropzone__preview canvas", $lastTargetClickedOrDropped).attr({width: 0, height: 0});
-                $(".dropzone__preview img", $lastTargetClickedOrDropped).removeAttr("src").removeAttr("alt");
             });
         }
 
@@ -444,7 +526,12 @@
             done();
         }
 
-        /** extensions to the native Dropzone's prototype **/
+
+
+
+
+
+        /**************** extensions to the native Dropzone's prototype ******************/
 
         var extensions = {
             /**
@@ -479,7 +566,7 @@
          * @param options
          * @returns {$.fn}
          */
-        $.fn.dropzonepresaisie = function (options) {
+        $.fn.multidropzone = function (options) {
             var otherArgs = Array.prototype.slice.call(arguments, 1); // extract secondary parameters
 
             return this.each(function (_, container) {
@@ -488,7 +575,8 @@
                     extensions[options].apply(null, [$container].concat(otherArgs)); // invoke the method
                     return;
                 }
-                $container.addClass("dropzone");
+
+                $container.addClass("multidropzone"); // display flex
 
                 var instance = new Dropzone(container, mergeOptions(options, $container));
                 $.extend(instance, getOverrides($container));
