@@ -158,10 +158,16 @@
                         if (!$.isPlainObject(pageMaps)) {
                             throw new Error("Expected array of the form {numPage: target node, ...}");
                         }
+
+                        file.pageTargetList = file.pageTargetList || [];
+
                         $.each(pageMaps, function (numPage, target) {
                             // target can be either a DOM node or jQuery wrapper.
                             // Double wrapping is fine for jQuery anyway
-                            renderPage(pdf, parseInt(numPage, 10), $(target).find("canvas"), $container);
+                            $target = $(target);
+
+                            renderPage(pdf, parseInt(numPage, 10), $target.find("canvas"), $container);
+                            file.pageTargetList.push($target);
                         });
                     }).catch(function (e) {
                         alert(e);
@@ -346,15 +352,15 @@
          * Called by Dropzone to calculate the thumbnail size after:
          *    1- addedFile() is called
          *    2- passes first internal check of createImageThumbnails option is true, mimeType is image and size <= maxThumbnailFilesize option
-         * Dropzone generate a thumbnail from creating a entirely new image from the original.
+         * Dropzone generates a thumbnail from creating an entirely new image from the original.
          * It does this by first drawing the original image inside a detached canvas to the new dimensions, then pull its
          * dataUrl representation.
          * This function returns the dimensions that are to be passed to the CanvasRenderingContext2D.drawImage(), long version:
          *      drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
          * If sx, sy, dx, dy are absent, Dropzone defaults them to 0.
          *
-         * Why override: the native dropzone function does not try to make the image cover the container (as in css "cover" property).
-         *
+         * Why override: the native dropzone function does not try to make the image fit entirely in the container (as in css "100% auto" value for background-size).
+         *               Instead, it simply crops its width to the container dimension (as in css "cover" value for background-size).
          * @param {File} file
          * @returns {
          *      srcWidth,   // sWidth
