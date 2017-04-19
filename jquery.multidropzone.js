@@ -28,7 +28,7 @@
             /**** Custom options ****/
 
             numFiles: 1, // number of files to handle
-            // html content to display inside the .dropzone__upload-invitation nodes of the drop targets.
+            // html content to display inside the .multidropzone__upload-invitation nodes of the drop targets.
             // If this option is an array, the n-th element will be used in the n-th drop target.
             // If the array length is < numFiles or the array contains falsy values, this default text
             // is used as a replacement.
@@ -36,12 +36,12 @@
             // function that prompts the user about page dispatch if pdf's num pages is > numFiles
             // @param {Object} o - object of the form
             //                     {
-            //                       item: <jQuery object to the .dropzone__item node that selected the pdf or the node itself>
+            //                       item: <jQuery object to the .multidropzone__item node that selected the pdf or the node itself>
             //                       numPages: <number of pages in the pdf>
             //                     }
             // @param {Function} (Optional) done - callback to call with an object of the form
             //                     {
-            //                       numPage <Integer representing a page number (1-based)>: <jQuery object to the .dropzone__target node that should display this specific page>
+            //                       numPage <Integer representing a page number (1-based)>: <jQuery object to the .multidropzone__target node that should display this specific page>
             //                       ...
             //                     }
             // done() is optional if a promise is returned instead, resolved with the same parameter as the done() callback.
@@ -59,22 +59,22 @@
             acceptedFiles: "image/*, application/pdf",
             // trick: used online html-to-string formatter http://pojo.sodhanalibrary.com/string.html
             previewTemplate: '' +
-            '<div class="dropzone__item">' +
-            '	<div class="dropzone__target">' +
-            '		<div class="dropzone__upload-invitation fa fa-upload" aria-hidden="true">' +
+            '<div class="multidropzone__item">' +
+            '	<div class="multidropzone__target">' +
+            '		<div class="multidropzone__upload-invitation fa fa-upload" aria-hidden="true">' +
             '		</div>' +
-            '		<div class="dropzone__preview">' +
+            '		<div class="multidropzone__preview">' +
             '			<img />' +
             '			<canvas width="0" height="0"></canvas>' +
             '		</div>' +
-            '		<div class="dropzone__edit">' +
-            '			<span class="dropzone__exchange fa fa-exchange fa-4x">Modifier</span>' +
+            '		<div class="multidropzone__edit">' +
+            '			<span class="multidropzone__exchange fa fa-exchange fa-4x">Modifier</span>' +
             '		</div>' +
             '	</div>' +
             '	<div class="ropzone__feedback">' +
-            '		<div class="dropzone__size"></div>' +
-            '		<div class="dropzone__filename"></div>' +
-            '		<span class="dropzone__delete fa fa-trash fa-4x">Annuler</span>' +
+            '		<div class="multidropzone__size"></div>' +
+            '		<div class="multidropzone__filename"></div>' +
+            '		<span class="multidropzone__delete fa fa-trash fa-4x">Annuler</span>' +
             '	</div>' +
             '</div>'
         };
@@ -147,7 +147,7 @@
          * Render pdf thumbnail
          * @param {Object} PDFJS - PDF.js instance
          * @param {File} file
-         * @param {jQuery} $item - the wrapped .dropzone__item element where to display the pdf
+         * @param {jQuery} $item - the wrapped .multidropzone__item element where to display the pdf
          * @param {jQuery} $container - our custom closured plugin container
          */
         function renderPdf(PDFJS, file, $item, $container) {
@@ -181,8 +181,8 @@
                             // Double wrapping is fine for jQuery anyway
                             $item = $(item);
 
-                            if (!$item.hasClass("dropzone__item")) {
-                                throw new Error("Expected item to have a class of 'dropzone__item'");
+                            if (!$item.hasClass("multidropzone__item")) {
+                                throw new Error("Expected item to have a class of 'multidropzone__item'");
                             }
 
                             // each page appears inside its own item. We simulate multiple files to the user when
@@ -213,8 +213,8 @@
                 /**
                  * Dropzone attaches an event listener for the drop event to our container element when we created the plugin.
                  * When the drop event is raised (directly or after bubbling), it calls drop().
-                 * To us, the container element is not actually a drop target, only .dropzone__target elements are.
-                 * We thus need to override drop() to only allow the drop to occur if the event's target was actually a .dropzone__target.
+                 * To us, the container element is not actually a drop target, only .multidropzone__target elements are.
+                 * We thus need to override drop() to only allow the drop to occur if the event's target was actually a .multidropzone__target.
                  * If so we let Dropzone deal with its stuff by calling the parent function, otherwise we prevent it.
                  * Note: I think this is a shortcoming of Dropzone implementation as it does emit a custom "drop" event but never
                  * checks if it was prevented or not, which would have allowed us to avoid overriding the function altogether.
@@ -222,8 +222,8 @@
                  */
                 drop: function (e) {
                     var instance = getDropzone($container);
-                    // get the .dropzone__item associated to the drop, taking into account bubbling
-                    var $item = $(e.target).closest(".dropzone__item");
+                    // get the .multidropzone__item associated to the drop, taking into account bubbling
+                    var $item = $(e.target).closest(".multidropzone__item");
 
                     if ($item.length) {
                         lastTargetClickedOrDropped = $item.get(0);
@@ -245,7 +245,7 @@
 
             for (var i = 0; i < options.numFiles; i++) {
                 $dropzoneTarget = $(options.previewTemplate);
-                $dropzoneTarget.find(".dropzone__upload-invitation").html(options.uploadInvitation[i]);
+                $dropzoneTarget.find(".multidropzone__upload-invitation").html(options.uploadInvitation[i]);
                 $container.append($dropzoneTarget);
             }
         }
@@ -300,7 +300,7 @@
             buildDropTargets(finalOptions, $container);
 
             // set targets as being clickable for file selection
-            finalOptions.clickable = $(".dropzone__target", $container).toArray();
+            finalOptions.clickable = $(".multidropzone__target", $container).toArray();
             finalOptions.maxFiles = finalOptions.numFiles;
 
             return finalOptions;
@@ -324,11 +324,12 @@
             // replace the currentFile
             if (currentFile) {
                 $.each(currentFile.pageMaps || [$item.get(0)], function (_, nextItem) {
-                    $item.removeClass("dropzone__item--fileadded");
-                    $(".dropzone__preview canvas", $item).attr({width: 0, height: 0});
-                    $(".dropzone__preview img", $item).removeAttr("src").removeAttr("alt");
-                    $item.find(".dropzone__size, .dropzone__filename").text('');
-                    $item.removeData("file");
+                    $nextItem = $(nextItem);
+                    $nextItem.removeClass("multidropzone__item--fileadded");
+                    $(".multidropzone__preview canvas", $nextItem).attr({width: 0, height: 0});
+                    $(".multidropzone__preview img", $nextItem).removeAttr("src").removeAttr("alt");
+                    $(".multidropzone__size, .multidropzone__filename", $nextItem).text('');
+                    $nextItem.removeData("file");
                 });
 
                 // tells Dropzone about its removal.
@@ -340,9 +341,9 @@
             $item.data("file", file);
 
             return function (size, name) {
-                $item.find(".dropzone__size").text(size);
-                $item.find(".dropzone__filename").text(name);
-                $item.addClass("dropzone__item--fileadded"); // this will hide upload-invitation and add the edit zone overlay
+                $item.find(".multidropzone__size").text(size);
+                $item.find(".multidropzone__filename").text(name);
+                $item.addClass("multidropzone__item--fileadded"); // this will hide upload-invitation and add the edit zone overlay
             };
         }
 
@@ -419,7 +420,8 @@
          */
         function optionAddedfile(file, $container) {
             var instance = getDropzone($container);
-            var currentFile = $(".dropzone__item", $container).data('file');
+            var $item = $(lastTargetClickedOrDropped);
+            var currentFile = $item.data('file');
 
             if (currentFile) {
                 instance.removeFile(currentFile); // tells Dropzone about its removal
@@ -458,7 +460,7 @@
          *     }
          */
         function optionResize(file) {
-            var $target = $(lastTargetClickedOrDropped).find(".dropzone__target");
+            var $target = $(lastTargetClickedOrDropped).find(".multidropzone__target");
             var maxWidth = $target.width();
             var maxHeight = $target.height();
             var width = file.width;
@@ -496,12 +498,12 @@
             var instance = getDropzone($container);
 
             // init events
-            $(".dropzone__target", $container).on("click", function () {
-                lastTargetClickedOrDropped = $(this).closest(".dropzone__item");
+            $(".multidropzone__target", $container).on("click", function () {
+                lastTargetClickedOrDropped = $(this).closest(".multidropzone__item");
             }).on("dragover dragenter", function () {
-                $(this).addClass("dropzone__target--dragover");
+                $(this).addClass("multidropzone__target--dragover");
             }).on("dragend dragleave drop", function () {
-                $(this).removeClass("dropzone__target--dragover");
+                $(this).removeClass("multidropzone__target--dragover");
             });
         }
 
@@ -539,7 +541,7 @@
              * @param $container
              */
             destroy: function ($container) {
-                $(".dropzone__target", $container).each(function (_, $target) {
+                $(".multidropzone__target", $container).each(function (_, $target) {
                     var inst = getDropzone($target);
                     if (typeof inst.destroy === "function") { // not yet documented but exists in Dropzone's source code
                         inst.destroy();
