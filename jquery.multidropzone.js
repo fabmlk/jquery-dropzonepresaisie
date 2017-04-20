@@ -20,9 +20,11 @@
 
         Dropzone.autoDiscover = false; // we don't want Dropzone to attach itself on DOMContentLoaded
 
-        // we need to keep track manually of what target a selected file come from
-        // see https://github.com/enyo/dropzone/issues/1112
-        var lastTargetClickedOrDropped = null;
+        // we need to keep track manually of what item a selected file come from
+        // Note: the dropzone is actually a .multidropzone__target element, not the .multidropzone__item parent element,
+        // but as we will more often use a reference to the item parent, we save in here directly
+        // see also https://github.com/enyo/dropzone/issues/1112
+        var lastItemClickedOrDropped = null;
 
         var defaults = {
             /**** Custom options ****/
@@ -78,10 +80,6 @@
             '	</div>' +
             '</div>'
         };
-
-
-
-
 
 
         /******************** utils function *********************/
@@ -144,7 +142,7 @@
         }
 
         /**
-         * Render pdf thumbnail
+         * Render the whole pdf, each page being rendered in each item specified by the user in the promptPages() option
          * @param {Object} PDFJS - PDF.js instance
          * @param {File} file
          * @param {jQuery} $item - the wrapped .multidropzone__item element where to display the pdf
@@ -153,7 +151,7 @@
         function renderPdf(PDFJS, file, $item, $container) {
             var instance = getDropzone($container);
 
-            PDFJS.getDocument(URL.createObjectURL(file)).then(function (pdf) {
+            PDFJS.getDocument(file.url).then(function (pdf) {
                 if (pdf.numPages > 1) {
                     var promptDfd = $.Deferred();
 
@@ -226,10 +224,10 @@
                     var $item = $(e.target).closest(".multidropzone__item");
 
                     if ($item.length) {
-                        lastTargetClickedOrDropped = $item.get(0);
+                        lastItemClickedOrDropped = $item.get(0);
                         Dropzone.prototype.drop.call(instance, e);
                     } else {
-                        lastTargetClickedOrDropped = null;
+                        lastItemClickedOrDropped = null;
                     }
                 }
             };
@@ -266,13 +264,11 @@
                     return optionResize(file, $container);
                 },
                 init: optionInit.bind(null, $container), // save $container inside closure
-                thumbnail: function (file, dataUrl) { // save $container inside closure
-                    if (dataUrl) {
-                        file.url = dataUrl;
-                    } else {
-                        file.url = URL.createObjectURL(file);
-                    }
-
+                thumbnail: function (file, url) { // save $container inside closure
+                    // save file's url as property of the file object
+                    // when called from Dropzone, url is a data URL for the image
+                    // when called from us, url is an object URL for the pdf
+                    file.url = url;
                     return optionThumbnail(file, $container);
                 },
                 addedfile: function (file) { // save $container inside closure
@@ -354,11 +350,11 @@
          * @returns {Function} ({File} file, {jQuery} $container)
          */
         function getThumbnailRendererFromMimeType(mimeType) {
-            if (lastTargetClickedOrDropped == null) {
+            if (lastItemClickedOrDropped == null) { // nothing to render
                 return $.noop;
             }
 
-            var $item = $(lastTargetClickedOrDropped);
+            var $item = $(lastItemClickedOrDropped);
 
             if (mimeType.indexOf("image") !== -1) {
                 return function (file, $container) { // image renderer
@@ -369,17 +365,18 @@
                     image.alt = file.name;
                     image.src = file.url;
                 };
-            } else if (mimeType.indexOf("pdf") !== -1) {
+            }
+
+            if (mimeType.indexOf("pdf") !== -1) {
                 return function (file, $container) { // pdf renderer
                     var instance = getDropzone($container);
 
                     renderPdf(instance.options.PDFJS, file, $item, $container);
                 };
             }
+
+            throw new Error("Mime type '" + mimeType + '" does not have a renderer');
         }
-
-
-
 
 
         /******************* option overrides functions ******************/
@@ -397,15 +394,12 @@
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionThumbnail(file, $container) {
-            var renderer = getThumbnailRendererFromMimeType(file.type);
-
             try {
-                renderer(file, $container);
-            } catch(e) {
+                getThumbnailRendererFromMimeType(file.type)(file, $container);
+            } catch (e) {
                 alert(e);
             }
         }
-
 
 
         /**
@@ -420,7 +414,7 @@
          */
         function optionAddedfile(file, $container) {
             var instance = getDropzone($container);
-            var $item = $(lastTargetClickedOrDropped);
+            var $item = $(lastItemClickedOrDropped);
             var currentFile = $item.data('file');
 
             if (currentFile) {
@@ -430,12 +424,11 @@
             if (file.type.indexOf("pdf") !== -1 && typeof instance.options.PDFJS === "object") { // We can render PDFs
                 // Dropzone displays thumbnails asynchronously. We respect this for PDF rendering too.
                 setTimeout(function () {
-                    instance.options.thumbnail(file, null);
+                    instance.options.thumbnail(file, URL.createObjectURL(file));
                 }, 0);
             }
-            // else if images, Dropzone will trigger a call to thumbnail for us
+            // else if images, Dropzone will trigger a thumbnail() call for us
         }
-
 
 
         /**
@@ -460,7 +453,7 @@
          *     }
          */
         function optionResize(file) {
-            var $target = $(lastTargetClickedOrDropped).find(".multidropzone__target");
+            var $target = $(lastItemClickedOrDropped).find(".multidropzone__target");
             var maxWidth = $target.width();
             var maxHeight = $target.height();
             var width = file.width;
@@ -495,15 +488,12 @@
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionInit($container) {
-            var instance = getDropzone($container);
-
-            // init events
             $(".multidropzone__target", $container).on("click", function () {
-                lastTargetClickedOrDropped = $(this).closest(".multidropzone__item");
+                lastItemClickedOrDropped = $(this).closest(".multidropzone__item"); // save item
             }).on("dragover dragenter", function () {
-                $(this).addClass("multidropzone__target--dragover");
+                $(this).addClass("multidropzone__target--dragover"); // css feedback
             }).on("dragend dragleave drop", function () {
-                $(this).removeClass("multidropzone__target--dragover");
+                $(this).removeClass("multidropzone__target--dragover"); // css feedback
             });
         }
 
@@ -522,15 +512,11 @@
          * @param {Function} done
          */
         function optionAccept(file, done) {
-            // if (lastTargetClickedOrDropped == null) {
+            // if (lastItemClickedOrDropped == null) {
             //     return done(""); // just pass non-null value
             // }
             done();
         }
-
-
-
-
 
 
         /**************** extensions to the native Dropzone's prototype ******************/
@@ -541,12 +527,12 @@
              * @param $container
              */
             destroy: function ($container) {
-                $(".multidropzone__target", $container).each(function (_, $target) {
-                    var inst = getDropzone($target);
-                    if (typeof inst.destroy === "function") { // not yet documented but exists in Dropzone's source code
-                        inst.destroy();
-                    }
-                });
+                var instance = getDropzone($container);
+
+                if (typeof instance.destroy === "function") { // not yet documented but exists in Dropzone's source code
+                    instance.destroy();
+                }
+                $container.removeClass("multidropzone");
                 Dropzone.prototype = dropzoneOriginalPrototype; // restore prototype
             },
 
@@ -557,10 +543,7 @@
         $.extend(true, Dropzone.prototype, extensions); // extends Dropzone prototype
 
         // cancel drag & drop outside our dropzones
-        $(document.body).on("drop dragover", function (e) {
-            e.preventDefault();
-            return false;
-        });
+        $(document.body).on("drop dragover", false);
 
         /**
          * TODO
