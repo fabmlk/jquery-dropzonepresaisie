@@ -68,3 +68,8 @@
 .multidropzone__exchange {
     cursor: pointer;
 }
+
+.multidropzone__feedback--error{
+    background-color: lightcoral;
+    border: 1px solid darkred;
+}

@@ -52,8 +52,22 @@
                 done({1: o.item});
             },
 
+            calltoactionTemplate: '' +
+            '<div class="multidropzone__call-to-action">' +
+            '	<div class="multidropzone__feedback"></div>' +
+            '	<div class="multidropzone__upload">' +
+            '		<progress class="multidropzone__progress">' +
+            '			<strong class="multidropzone__progress-fallback"></strong>' +
+            '		</progress>' +
+            '		<button class="multidropzone__cancel"></button>' +
+            '	</div>' +
+            '	<button class="multidropzone__start"></button>' +
+            '</div>',
 
-            /**** Dropzone plugin options ****/
+
+
+
+        /**** Dropzone plugin options ****/
 
             // do not upload on file selection
             autoProcessQueue: false,
@@ -73,7 +87,7 @@
             '			<span class="multidropzone__exchange fa fa-exchange fa-4x">Modifier</span>' +
             '		</div>' +
             '	</div>' +
-            '	<div class="ropzone__feedback">' +
+            '	<div class="multidropzone__info">' +
             '		<div class="multidropzone__size"></div>' +
             '		<div class="multidropzone__filename"></div>' +
             '		<span class="multidropzone__delete fa fa-trash fa-4x">Annuler</span>' +
@@ -91,6 +105,20 @@
          */
         function getDropzone($container) {
             return Dropzone.forElement($container.get(0));
+        }
+
+
+
+        function giveFeedback(data, $container) {
+            if (data instanceof Error) {
+                $(".multidropzone__feedback", $container)
+                    .addClass('.multidropzone__feedback--error')
+                    .html(data.message);
+            } else {
+                $(".multidropzone__feedback", $container)
+                    .removeClass(".multidropzone__feedback--error")
+                    .html(data);
+            }
         }
 
 
@@ -207,6 +235,8 @@
          * @returns {Object}
          */
         function getOverrides($container) {
+            var scheduledCall = null;
+
             return {
                 /**
                  * Dropzone attaches an event listener for the drop event to our container element when we created the plugin.
@@ -229,6 +259,37 @@
                     } else {
                         lastItemClickedOrDropped = null;
                     }
+                },
+
+                /**
+                 * Why we override core Dropzone's addFile() this way is tricky to understand.
+                 * Prerequisites:
+                 *   In our implementation, only when thumbnail() is called do we attach a file to its item.
+                 *   When our optionAddedFile() is called from Dropzone's core addFile() we first check if a file has been attached to the lastItemClickedOrDropped,
+                 *   and if so, we tell Dropzone to remove the file from the queue via removeFile().
+                 *   Dropzone adds multiple="multiple" attribute to its hidden file input if options.maxFiles > 1, which we use.
+                 *   When files are added, it checks in its internal accept() method if its queue is not > options.maxFiles, and if so triggers an error.
+                 * The problem is that Dropzone calls thumbnail() asynchronously, which means that if multiple files were selected together by the user, it loops through all the files
+                 * and calls its core addFile() synchronously, queueing the future calls to thumbnail().
+                 * See the problem here ? our lastItemClickedOrDropped still points to the first item the user clicked or dropped on, and as thumbnail() was not yet called,
+                 * no instances of a file has been attached to the item yet.
+                 * Therefore, we never call removeFile() and all selected files are added inside Dropzone's queue. As the queue grows, it detects that it gets > options.maxFiles
+                 * and raises an error!!
+                 *
+                 * What trick do we use to prevent this:
+                 * We override the core addFile() to first absorb all the synchronous calls Dropzone will make. Those calls are stored in an asynchronous pool to trigger on next next.
+                 * On the next tick, we detect if the pool is > 1, meanng
+                 */
+                addFile: function (file) {
+                    scheduledCall
+                    if (loopsPool.length > 1) {
+                        return;
+                    }
+                    loopsPool.push(setTimeout(function () {
+                        var instance = getDropzone($container);
+
+                        Dropzone.prototype.addFile.call(instance, file); // last file only
+                    }, 0));
                 }
             };
         }
@@ -246,6 +307,7 @@
                 $dropzoneTarget.find(".multidropzone__upload-invitation").html(options.uploadInvitation[i]);
                 $container.append($dropzoneTarget);
             }
+            $container.append(options.calltoactionTemplate);
         }
 
         /**
@@ -361,7 +423,6 @@
                     var image = $item.find("img").get(0);
 
                     addFileToItem(file, $item, $container)(file.size, file.name);
-
                     image.alt = file.name;
                     image.src = file.url;
                 };
