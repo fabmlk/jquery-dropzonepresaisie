@@ -133,10 +133,10 @@
             var canvas = $canvas.get(0);
             var instance = getDropzone($container);
 
-            pdf.getPage(pageIndex).then(function (page) {
+            return pdf.getPage(pageIndex).then(function (page) {
                 var unscaledViewport = page.getViewport(1);
                 // calculate the target width and height we want for the pdf:
-                // resize() needs as argument any object with .width and .height attributes,
+                // resize() needs as argument any object with .width and .height attributes (readonly),
                 // so we can pass it a viewport object directly
                 var resizeInfo = instance.options.resize(unscaledViewport);
                 if (resizeInfo.trgWidth == null) {
@@ -162,10 +162,7 @@
                     viewport: viewport
                 };
 
-                var renderTask = page.render(renderContext);
-                renderTask.then(function () {
-                    console.log('Page rendered');
-                });
+                return page.render(renderContext); // returns renderTask Promise
             });
         }
 
@@ -176,7 +173,7 @@
          * @param {jQuery} $item - the wrapped .multidropzone__item element where to display the pdf
          * @param {jQuery} $container - our custom closured plugin container
          */
-        function renderPdf(PDFJS, file, $item, $container) {
+        function renderPdf(PDFJS, file, $item, $container, done) {
             var instance = getDropzone($container);
 
             PDFJS.getDocument(file.url).then(function (pdf) {
@@ -197,6 +194,8 @@
                             throw new Error("Expected object of the form {<numPage>: <target node>, ...}");
                         }
 
+                        var pagePromises = [];
+
                         file.pageMaps = $.extend({}, pageMaps); // save copy of pageMaps inside the file. See defaults options.
 
                         // render each page as specified by pageMaps and keep some state inside the $item container
@@ -213,16 +212,17 @@
 
                             // each page appears inside its own item. We simulate multiple files to the user when
                             // there is only just one.
-                            renderPage(pdf, numPage, $item.find("canvas"), $container);
+                            pagePromises.push(renderPage(pdf, numPage, $item.find("canvas"), $container));
 
                             // each $item will keep an instance of the file so we can know from here where pages are being dispatched.
                             // So when a file will be replaced or removed, we can retreive its file instance and run through
                             // all pageMaps to discard the other instances and reset the UI.
                             addFileToItem(file, $item, $container)(file.size, file.name + ' (page n°' + numPage + ')');
                         });
+                        $.when.apply($, pagePromises).then(done);
                     });
                 } else { // only one page
-                    renderPage(pdf, 1, $target.find("canvas"), $container);
+                    renderPage(pdf, 1, $target.find("canvas"), $container).then(done);
                 }
             });
         }
@@ -235,7 +235,8 @@
          * @returns {Object}
          */
         function getOverrides($container) {
-            var scheduledCall = null;
+            var filesPool = [];
+            var processPool = [];
 
             return {
                 /**
@@ -280,16 +281,28 @@
                  * We override the core addFile() to first absorb all the synchronous calls Dropzone will make. Those calls are stored in an asynchronous pool to trigger on next next.
                  * On the next tick, we detect if the pool is > 1, meanng
                  */
-                addFile: function (file) {
-                    scheduledCall
-                    if (loopsPool.length > 1) {
-                        return;
-                    }
-                    loopsPool.push(setTimeout(function () {
-                        var instance = getDropzone($container);
+                addFile: function batchStart (file) {
+                    var instance = getDropzone($container);
 
-                        Dropzone.prototype.addFile.call(instance, file); // last file only
-                    }, 0));
+                    function batchNext() {
+                        Dropzone.prototype.off.call(instance, 'multidropzone.doneprocessing');
+                        Dropzone.prototype.on.call(instance, 'multidropzone.doneprocessing', function () {
+                            if (filesPool.length) {
+                                batchNext();
+                                lastItemClickedOrDropped = $(lastItemClickedOrDropped).next(".multidropzone__item").get(0)
+                                    || $(".multidropzone__item", $container).first().get(0);
+                                Dropzone.prototype.addFile.call(instance, filesPool.shift()); // last file only
+                            }
+                            instance.addFile = batchStart;
+                        });
+                    }
+
+                    batchNext();
+                    Dropzone.prototype.addFile.call(instance, file);
+
+                    instance.addFile = function (file) {
+                        filesPool.push(file);
+                    };
                 }
             };
         }
@@ -383,9 +396,15 @@
             if (currentFile) {
                 $.each(currentFile.pageMaps || [$item.get(0)], function (_, nextItem) {
                     $nextItem = $(nextItem);
+                    var $canvas = $(".multidropzone__preview canvas", $nextItem);
+                    var canvas = $canvas.get(0);
+                    var context = canvas.getContext('2d');
+
                     $nextItem.removeClass("multidropzone__item--fileadded");
-                    $(".multidropzone__preview canvas", $nextItem).attr({width: 0, height: 0});
-                    $(".multidropzone__preview img", $nextItem).removeAttr("src").removeAttr("alt");
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    console.log("flatenning canvas");
+                    $canvas.attr({width: 0, height: 0});
+                    $(".multidropzone__preview img", $nextItem).removeAttr("src alt");
                     $(".multidropzone__size, .multidropzone__filename", $nextItem).text('');
                     $nextItem.removeData("file");
                 });
@@ -419,20 +438,21 @@
             var $item = $(lastItemClickedOrDropped);
 
             if (mimeType.indexOf("image") !== -1) {
-                return function (file, $container) { // image renderer
+                return function (file, $container, done) { // image renderer
                     var image = $item.find("img").get(0);
 
                     addFileToItem(file, $item, $container)(file.size, file.name);
                     image.alt = file.name;
                     image.src = file.url;
+                    done();
                 };
             }
 
             if (mimeType.indexOf("pdf") !== -1) {
-                return function (file, $container) { // pdf renderer
+                return function (file, $container, done) { // pdf renderer
                     var instance = getDropzone($container);
 
-                    renderPdf(instance.options.PDFJS, file, $item, $container);
+                    renderPdf(instance.options.PDFJS, file, $item, $container, done);
                 };
             }
 
@@ -455,8 +475,11 @@
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionThumbnail(file, $container) {
+            var instance = getDropzone($container);
             try {
-                getThumbnailRendererFromMimeType(file.type)(file, $container);
+                getThumbnailRendererFromMimeType(file.type)(file, $container, function () {
+                    Dropzone.prototype.emit.call(instance, 'multidropzone.doneprocessing', file);
+                });
             } catch (e) {
                 alert(e);
             }
@@ -520,6 +543,7 @@
             var width = file.width;
             var height = file.height;
 
+            console.log("calculating canvas size");
             if (width / maxWidth > height / maxHeight) {
                 if (width > maxWidth) {
                     height *= maxWidth / width;
