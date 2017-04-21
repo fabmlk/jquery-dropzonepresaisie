@@ -65,9 +65,7 @@
             '</div>',
 
 
-
-
-        /**** Dropzone plugin options ****/
+            /**** Dropzone plugin options ****/
 
             // do not upload on file selection
             autoProcessQueue: false,
@@ -108,7 +106,6 @@
         }
 
 
-
         function giveFeedback(data, $container) {
             if (data instanceof Error) {
                 $(".multidropzone__feedback", $container)
@@ -129,7 +126,7 @@
          * @param {jQuery} $canvas
          * @param {jQuery} $container
          */
-        function renderPage(pdf, pageIndex, $canvas, $container) {
+        function renderPage(pdf, name, pageIndex, $canvas, $container) {
             var canvas = $canvas.get(0);
             var instance = getDropzone($container);
 
@@ -161,7 +158,6 @@
                     canvasContext: context,
                     viewport: viewport
                 };
-
                 return page.render(renderContext); // returns renderTask Promise
             });
         }
@@ -173,10 +169,10 @@
          * @param {jQuery} $item - the wrapped .multidropzone__item element where to display the pdf
          * @param {jQuery} $container - our custom closured plugin container
          */
-        function renderPdf(PDFJS, file, $item, $container, done) {
+        function renderPdf(PDFJS, file, $item, $container) {
             var instance = getDropzone($container);
 
-            PDFJS.getDocument(file.url).then(function (pdf) {
+            return PDFJS.getDocument(file.url).then(function (pdf) {
                 if (pdf.numPages > 1) {
                     var promptDfd = $.Deferred();
 
@@ -194,12 +190,11 @@
                             throw new Error("Expected object of the form {<numPage>: <target node>, ...}");
                         }
 
-                        var pagePromises = [];
+                        var promise = Promise.resolve();
 
                         file.pageMaps = $.extend({}, pageMaps); // save copy of pageMaps inside the file. See defaults options.
 
-                        // render each page as specified by pageMaps and keep some state inside the $item container
-                        $.each(pageMaps, function (numPage, item) {
+                        function processPage (numPage, item) {
                             var numPage = parseInt(numPage, 10);
 
                             // target can be either a DOM node or jQuery wrapper.
@@ -209,20 +204,25 @@
                             if (!$item.hasClass("multidropzone__item")) {
                                 throw new Error("Expected item to have a class of 'multidropzone__item'");
                             }
-
-                            // each page appears inside its own item. We simulate multiple files to the user when
-                            // there is only just one.
-                            pagePromises.push(renderPage(pdf, numPage, $item.find("canvas"), $container));
-
                             // each $item will keep an instance of the file so we can know from here where pages are being dispatched.
                             // So when a file will be replaced or removed, we can retreive its file instance and run through
                             // all pageMaps to discard the other instances and reset the UI.
                             addFileToItem(file, $item, $container)(file.size, file.name + ' (page n°' + numPage + ')');
+
+                            // each page appears inside its own item. We simulate multiple files to the user when
+                            // there is only just one.
+                            return renderPage(pdf, file.name, numPage, $item.find("canvas"), $container);
+                        }
+
+                        // render each page as specified by pageMaps and keep some state inside the $item container
+                        $.each(pageMaps, function (numPage, item) {
+                            promise = promise.then(processPage.bind(null, numPage, item));
                         });
-                        $.when.apply($, pagePromises).then(done);
+                        return promise;
                     });
                 } else { // only one page
-                    renderPage(pdf, 1, $target.find("canvas"), $container).then(done);
+                    addFileToItem(file, $item, $container)(file.size, file.name);
+                    return renderPage(pdf, file.name, 1, $item.find("canvas"), $container);
                 }
             });
         }
@@ -235,9 +235,6 @@
          * @returns {Object}
          */
         function getOverrides($container) {
-            var filesPool = [];
-            var processPool = [];
-
             return {
                 /**
                  * Dropzone attaches an event listener for the drop event to our container element when we created the plugin.
@@ -278,30 +275,28 @@
                  * and raises an error!!
                  *
                  * What trick do we use to prevent this:
-                 * We override the core addFile() to first absorb all the synchronous calls Dropzone will make. Those calls are stored in an asynchronous pool to trigger on next next.
-                 * On the next tick, we detect if the pool is > 1, meanng
+                 * First, it is important to understand that we don't want to mess with non-public, subject to change, Dropzone's internal interface (either not documented
+                 * or marked with a "_" in the source code).
+                 * We override the core addFile() to absorb the first call to be executed on next tick. During the current tick, we cancel out each remaining calls by swapping
+                 * addFile() with a dummy receiver that will do nothing with the files.
+                 * On next tick, we can finally put our override back and start over waiting for next file selection.
                  */
-                addFile: function batchStart (file) {
-                    var instance = getDropzone($container);
+                addFile: function start(file) {
+                    var self = this;
 
-                    function batchNext() {
-                        Dropzone.prototype.off.call(instance, 'multidropzone.doneprocessing');
-                        Dropzone.prototype.on.call(instance, 'multidropzone.doneprocessing', function () {
-                            if (filesPool.length) {
-                                batchNext();
-                                lastItemClickedOrDropped = $(lastItemClickedOrDropped).next(".multidropzone__item").get(0)
-                                    || $(".multidropzone__item", $container).first().get(0);
-                                Dropzone.prototype.addFile.call(instance, filesPool.shift()); // last file only
-                            }
-                            instance.addFile = batchStart;
-                        });
-                    }
+                    setTimeout(function () {
+                        try {
+                            // by closure, file here is the first one received (seems to be the last selected by the user in practice)
+                            Dropzone.prototype.addFile.call(self, file);
+                        } finally {
+                            // restore in a finally clause, in case something went wrong.
+                            // Note: if a fatal error was raise we're still fucked !
+                            self.addFile = start;
+                        }
+                    }, 0);
 
-                    batchNext();
-                    Dropzone.prototype.addFile.call(instance, file);
-
-                    instance.addFile = function (file) {
-                        filesPool.push(file);
+                    this.addFile = function () { // absorber
+                        console.warn("no more!");
                     };
                 }
             };
@@ -333,7 +328,6 @@
          * @returns {Object}
          */
         function mergeOptions(overrideOptions, $container) {
-
             var dropzoneOptions = {
                 resize: function (file) { // save $container inside closure
                     return optionResize(file, $container);
@@ -402,7 +396,6 @@
 
                     $nextItem.removeClass("multidropzone__item--fileadded");
                     context.clearRect(0, 0, canvas.width, canvas.height);
-                    console.log("flatenning canvas");
                     $canvas.attr({width: 0, height: 0});
                     $(".multidropzone__preview img", $nextItem).removeAttr("src alt");
                     $(".multidropzone__size, .multidropzone__filename", $nextItem).text('');
@@ -432,27 +425,29 @@
          */
         function getThumbnailRendererFromMimeType(mimeType) {
             if (lastItemClickedOrDropped == null) { // nothing to render
-                return $.noop;
+                return function () {
+                    return Promise.resolve();
+                };
             }
 
             var $item = $(lastItemClickedOrDropped);
 
             if (mimeType.indexOf("image") !== -1) {
-                return function (file, $container, done) { // image renderer
+                return function (file, $container) { // image renderer
                     var image = $item.find("img").get(0);
 
                     addFileToItem(file, $item, $container)(file.size, file.name);
                     image.alt = file.name;
                     image.src = file.url;
-                    done();
+                    return Promise.resolve();
                 };
             }
 
             if (mimeType.indexOf("pdf") !== -1) {
-                return function (file, $container, done) { // pdf renderer
+                return function (file, $container) { // pdf renderer
                     var instance = getDropzone($container);
 
-                    renderPdf(instance.options.PDFJS, file, $item, $container, done);
+                    return renderPdf(instance.options.PDFJS, file, $item, $container);
                 };
             }
 
@@ -476,13 +471,11 @@
          */
         function optionThumbnail(file, $container) {
             var instance = getDropzone($container);
-            try {
-                getThumbnailRendererFromMimeType(file.type)(file, $container, function () {
-                    Dropzone.prototype.emit.call(instance, 'multidropzone.doneprocessing', file);
-                });
-            } catch (e) {
+
+            var a = getThumbnailRendererFromMimeType(file.type)(file, $container).catch(function (e) {
                 alert(e);
-            }
+                instance.removeFile(file);
+            });
         }
 
 
@@ -543,7 +536,6 @@
             var width = file.width;
             var height = file.height;
 
-            console.log("calculating canvas size");
             if (width / maxWidth > height / maxHeight) {
                 if (width > maxWidth) {
                     height *= maxWidth / width;
@@ -573,7 +565,13 @@
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionInit($container) {
-            $(".multidropzone__target", $container).on("click", function () {
+            // We don't use "click" here because IE11/Edge fire "change" and "click" in the wrong order.
+            // It should be first "click", then "change", but they fire the other way round:
+            // https://connect.microsoft.com/IE/feedback/details/2255779/edge-ie11-checkbox-input-fires-click-change-events-in-wrong-order
+            // As Dropzone attaches a "change" event on its hidden file input to start processing the file, the result is that our click handler
+            // does not execute to set lastItemClickedOrDropped correctly.
+            // The trick used here is then to listen on "mouseup" instead, which is indeed fired before "change" as we want.
+            $(".multidropzone__target", $container).on("mouseup", function () {
                 lastItemClickedOrDropped = $(this).closest(".multidropzone__item"); // save item
             }).on("dragover dragenter", function () {
                 $(this).addClass("multidropzone__target--dragover"); // css feedback
@@ -600,6 +598,9 @@
             // if (lastItemClickedOrDropped == null) {
             //     return done(""); // just pass non-null value
             // }
+            if (file.size === 0) {
+                console.warn("file", file.name, "0 length detected");
+            }
             done();
         }
 
