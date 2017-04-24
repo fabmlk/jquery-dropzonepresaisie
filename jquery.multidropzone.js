@@ -52,16 +52,15 @@
                 done({1: o.item});
             },
 
-            calltoactionTemplate: '' +
+            callToActionTemplate: '' +
             '<div class="multidropzone__call-to-action">' +
             '	<div class="multidropzone__feedback"></div>' +
             '	<div class="multidropzone__upload">' +
             '		<progress class="multidropzone__progress">' +
             '			<strong class="multidropzone__progress-fallback"></strong>' +
             '		</progress>' +
-            '		<button class="multidropzone__cancel"></button>' +
             '	</div>' +
-            '	<button class="multidropzone__start"></button>' +
+            '	<button class="multidropzone__start">Valider</button>' +
             '</div>',
 
 
@@ -78,17 +77,18 @@
             '		<div class="multidropzone__upload-invitation fa fa-upload" aria-hidden="true">' +
             '		</div>' +
             '		<div class="multidropzone__preview">' +
-            '			<img />' +
-            '			<canvas width="0" height="0"></canvas>' +
+            '			<img class="multidropzone__drawing" />' +
+            '			<canvas class="multidropzone__drawing" width="0" height="0"></canvas>' +
             '		</div>' +
             '		<div class="multidropzone__edit">' +
-            '			<span class="multidropzone__exchange fa fa-exchange fa-4x">Modifier</span>' +
+            '           <span class="multidropzone__remove">&#x2716;</span>' +
+            '			<span class="multidropzone__exchange">&#x1f5c0; Modifier</span>' +
             '		</div>' +
             '	</div>' +
             '	<div class="multidropzone__info">' +
             '		<div class="multidropzone__size"></div>' +
             '		<div class="multidropzone__filename"></div>' +
-            '		<span class="multidropzone__delete fa fa-trash fa-4x">Annuler</span>' +
+            '		<span class="multidropzone__delete">&#x1f5d1; Annuler</span>' +
             '	</div>' +
             '</div>'
         };
@@ -190,11 +190,12 @@
                             throw new Error("Expected object of the form {<numPage>: <target node>, ...}");
                         }
 
-                        var promise = Promise.resolve();
+                        var pagePromises = [];
 
                         file.pageMaps = $.extend({}, pageMaps); // save copy of pageMaps inside the file. See defaults options.
 
-                        function processPage (numPage, item) {
+                        // render each page as specified by pageMaps and keep some state inside the $item container
+                        $.each(pageMaps, function (numPage, item) {
                             var numPage = parseInt(numPage, 10);
 
                             // target can be either a DOM node or jQuery wrapper.
@@ -205,20 +206,16 @@
                                 throw new Error("Expected item to have a class of 'multidropzone__item'");
                             }
                             // each $item will keep an instance of the file so we can know from here where pages are being dispatched.
-                            // So when a file will be replaced or removed, we can retreive its file instance and run through
+                            // So when a file will be replaced or removed, we can retrieve its file instance and run through
                             // all pageMaps to discard the other instances and reset the UI.
                             addFileToItem(file, $item, $container)(file.size, file.name + ' (page n°' + numPage + ')');
 
                             // each page appears inside its own item. We simulate multiple files to the user when
                             // there is only just one.
-                            return renderPage(pdf, file.name, numPage, $item.find("canvas"), $container);
-                        }
-
-                        // render each page as specified by pageMaps and keep some state inside the $item container
-                        $.each(pageMaps, function (numPage, item) {
-                            promise = promise.then(processPage.bind(null, numPage, item));
+                            pagePromises.push(renderPage(pdf, file.name, numPage, $item.find("canvas"), $container));
                         });
-                        return promise;
+
+                        return Promise.all(pagePromises);
                     });
                 } else { // only one page
                     addFileToItem(file, $item, $container)(file.size, file.name);
@@ -264,7 +261,7 @@
                  * Prerequisites:
                  *   In our implementation, only when thumbnail() is called do we attach a file to its item.
                  *   When our optionAddedFile() is called from Dropzone's core addFile() we first check if a file has been attached to the lastItemClickedOrDropped,
-                 *   and if so, we tell Dropzone to remove the file from the queue via removeFile().
+                 *   and if so, we tell Dropzone to remove the file from the queue via removeFile() because we are replacing it.
                  *   Dropzone adds multiple="multiple" attribute to its hidden file input if options.maxFiles > 1, which we use.
                  *   When files are added, it checks in its internal accept() method if its queue is not > options.maxFiles, and if so triggers an error.
                  * The problem is that Dropzone calls thumbnail() asynchronously, which means that if multiple files were selected together by the user, it loops through all the files
@@ -277,27 +274,28 @@
                  * What trick do we use to prevent this:
                  * First, it is important to understand that we don't want to mess with non-public, subject to change, Dropzone's internal interface (either not documented
                  * or marked with a "_" in the source code).
-                 * We override the core addFile() to absorb the first call to be executed on next tick. During the current tick, we cancel out each remaining calls by swapping
-                 * addFile() with a dummy receiver that will do nothing with the files.
-                 * On next tick, we can finally put our override back and start over waiting for next file selection.
+                 * The principle is to absorb all calls except the first one into the current tick. The first call is scheduled to be processed
+                 * on next tick and the other calls will thus be discarded.
                  */
                 addFile: function start(file) {
                     var self = this;
 
-                    setTimeout(function () {
+                    if (this.addFile.file) { // let the first call through; filter all subsequent calls
+                        console.log("ignoring", file.name);
+                        return;
+                    }
+
+                    this.addFile.file = file; // setup first call
+
+                    setTimeout(function () { // next Tick, Dropzone sync calls are done, now it's our turn
                         try {
-                            // by closure, file here is the first one received (seems to be the last selected by the user in practice)
-                            Dropzone.prototype.addFile.call(self, file);
+                            Dropzone.prototype.addFile.call(self, self.addFile.file); // parent's
                         } finally {
-                            // restore in a finally clause, in case something went wrong.
+                            // release filter in a finally clause, in case something went wrong.
                             // Note: if a fatal error was raise we're still fucked !
-                            self.addFile = start;
+                            delete self.addFile.file;
                         }
                     }, 0);
-
-                    this.addFile = function () { // absorber
-                        console.warn("no more!");
-                    };
                 }
             };
         }
@@ -315,7 +313,7 @@
                 $dropzoneTarget.find(".multidropzone__upload-invitation").html(options.uploadInvitation[i]);
                 $container.append($dropzoneTarget);
             }
-            $container.append(options.calltoactionTemplate);
+            $container.append(options.callToActionTemplate);
         }
 
         /**
@@ -565,6 +563,8 @@
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionInit($container) {
+            var instance = getDropzone($container);
+
             // We don't use "click" here because IE11/Edge fire "change" and "click" in the wrong order.
             // It should be first "click", then "change", but they fire the other way round:
             // https://connect.microsoft.com/IE/feedback/details/2255779/edge-ie11-checkbox-input-fires-click-change-events-in-wrong-order
@@ -577,6 +577,13 @@
                 $(this).addClass("multidropzone__target--dragover"); // css feedback
             }).on("dragend dragleave drop", function () {
                 $(this).removeClass("multidropzone__target--dragover"); // css feedback
+            });
+
+            $(".multidropzone__start", $container).on("click", function () {
+                instance.processQueue();
+            });
+            instance.on("totaluploadprogress", function (progress) {
+                $(".multidropzone__progress", $container).val(progress);
             });
         }
 

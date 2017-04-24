@@ -40,6 +40,7 @@
 
 
 .multidropzone__upload-invitation::before {
+    /* "content:" is already defined by font-awesome */
     display: block;
     font-size: 5em;
     text-align: center;
@@ -53,8 +54,14 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(255, 0, 0, 0.5);
-    opacity: 0.5;
+}
+
+.multidropzone__exchange, .multidropzone__delete {
+    font-size: 2em;
+}
+
+.multidropzone__target:hover .multidropzone__drawing {
+    filter: blur(5px);
 }
 
 .multidropzone__item--fileadded .multidropzone__target:hover .multidropzone__edit {
@@ -72,4 +79,11 @@
 .multidropzone__feedback--error{
     background-color: lightcoral;
     border: 1px solid darkred;
+}
+
+.multidropzone__remove {
+    font-size: 3em;
+    position: absolute;
+    right: 0;
+    align-self: flex-start;
 }
