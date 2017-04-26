@@ -54,6 +54,7 @@
     left: 0;
     right: 0;
     bottom: 0;
+    text-align: center;
 }
 
 .multidropzone__exchange, .multidropzone__delete {
@@ -64,15 +65,23 @@
     filter: blur(5px);
 }
 
-.multidropzone__item--fileadded .multidropzone__target:hover .multidropzone__edit {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    cursor: auto;
+/* IE does not support css filters */
+.ie .multidropzone__target:hover .multidropzone__drawing {
+    background-color: #c9c9c9;
+    opacity: 0.5;
 }
 
-.multidropzone__delete,
+.multidropzone__item--fileadded .multidropzone__target:hover .multidropzone__edit {
+    display: block;
+    cursor: default; /* cursor:auto does not work properly on IE8+, see http://stackoverflow.com/questions/36092736/internet-explorer-cursor-auto */
+}
+
+.multidropzone__delete {
+    cursor: pointer;
+}
+
 .multidropzone__exchange {
+    line-height: 400px;
     cursor: pointer;
 }
 
@@ -85,5 +94,4 @@
     font-size: 3em;
     position: absolute;
     right: 0;
-    align-self: flex-start;
 }
