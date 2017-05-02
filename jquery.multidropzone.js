@@ -52,6 +52,7 @@
                 done({1: o.item});
             },
 
+            // template for call-to-action
             callToActionTemplate: '' +
             '<div class="multidropzone__call-to-action">' +
             '	<div class="multidropzone__feedback"></div>' +
@@ -77,7 +78,7 @@
             '		<div class="multidropzone__upload-invitation fa fa-upload" aria-hidden="true">' +
             '		</div>' +
             '		<div class="multidropzone__preview">' +
-            '			<img class="multidropzone__drawing" />' +
+            '			<img width="0" height="0" class="multidropzone__drawing" />' +
             '			<canvas class="multidropzone__drawing" width="0" height="0"></canvas>' +
             '		</div>' +
             '		<div class="multidropzone__edit">' +
@@ -86,11 +87,11 @@
             '		</div>' +
             '	</div>' +
             '	<div class="multidropzone__info">' +
-            '		<div class="multidropzone__size"></div>' +
             '		<div class="multidropzone__filename"></div>' +
-            '		<span class="multidropzone__delete">&#x1f5d1; Annuler</span>' +
             '	</div>' +
-            '</div>'
+            '</div>',
+            // allow multiple files upload in one request
+            uploadMultiple: true
         };
 
 
@@ -348,6 +349,9 @@
                     console.dir(file);
                     alert(message);
                 },
+                paramName: function (i) {
+                    return optionParamName(i, $container);
+                },
             };
 
             var finalOptions = $.extend({}, defaults, dropzoneOptions, overrideOptions);
@@ -371,7 +375,48 @@
 
 
         /**
+         * Remove a file attached to the item, resetting the UI.
+         * @param {jQuery} $item
+         * @param {jQuery} $container - our custom closured plugin container
+         */
+        function removeFileFromItem($item, $container) {
+            var instance = getDropzone($container);
+            var currentFile = $item.data("file");
+
+            // remove the currentFile
+            if (!currentFile) {
+                return
+            }
+
+            $.each(currentFile.pageMaps || [$item.get(0)], function (_, nextItem) {
+                $nextItem = $(nextItem);
+                var $canvas = $(".multidropzone__preview canvas", $nextItem);
+                var canvas = $canvas.get(0);
+                var context = canvas.getContext('2d');
+
+                $nextItem.removeClass("multidropzone__item--fileadded");
+                // reset canvas
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                $canvas.attr({width: 0, height: 0});
+                // reset image. Note: IE 11 gives an empty image a size, so we have to set its size to 0 explicitly
+                $(".multidropzone__preview img", $nextItem).removeAttr("src alt").attr({width: 0, height: 0});
+                // reset file info
+                $(".multidropzone__size, .multidropzone__filename", $nextItem).text('');
+                $nextItem.removeData("file");
+            });
+
+            delete currentFile.item; // release memory dependency to our custom item member (see addFileToItem)
+
+            // tells Dropzone about its removal.
+            // Note that this removal may have actually happened earlier inside optionAddedFile.
+            // If we try to remove a file that does not exist anymore, Dropzone does not care, so we're safe here.
+            instance.removeFile(currentFile);
+        }
+
+
+        /**
          * Add the file to the item, replaçing the current one if any.
+         * The item is saved as a member of the file too for quick retreival.
          * The first step is reseting the UI. The second step is to update the UI with file information.
          * This is done by returning an updater to call whenever ready.
          *
@@ -381,32 +426,10 @@
          * @returns {Function} File Info UI updater ({String} size: the size of the file, {String} name: the name of the file)
          */
         function addFileToItem(file, $item, $container) {
-            var instance = getDropzone($container);
-            var currentFile = $item.data("file");
-
-            // replace the currentFile
-            if (currentFile) {
-                $.each(currentFile.pageMaps || [$item.get(0)], function (_, nextItem) {
-                    $nextItem = $(nextItem);
-                    var $canvas = $(".multidropzone__preview canvas", $nextItem);
-                    var canvas = $canvas.get(0);
-                    var context = canvas.getContext('2d');
-
-                    $nextItem.removeClass("multidropzone__item--fileadded");
-                    context.clearRect(0, 0, canvas.width, canvas.height);
-                    $canvas.attr({width: 0, height: 0});
-                    $(".multidropzone__preview img", $nextItem).removeAttr("src alt");
-                    $(".multidropzone__size, .multidropzone__filename", $nextItem).text('');
-                    $nextItem.removeData("file");
-                });
-
-                // tells Dropzone about its removal.
-                // Note that this removal may have actually happened earlier inside optionAddedFile.
-                // If we try to remove a file that does not exist anymore, Dropzone does not care, so we're safe here.
-                instance.removeFile(currentFile);
-            }
+            removeFileFromItem($item, $container);
 
             $item.data("file", file);
+            file.item = $item;
 
             return function (size, name) {
                 $item.find(".multidropzone__size").text(size);
@@ -432,9 +455,11 @@
 
             if (mimeType.indexOf("image") !== -1) {
                 return function (file, $container) { // image renderer
-                    var image = $item.find("img").get(0);
+                    var $img = $item.find("img"),
+                        image = $img.get(0);
 
                     addFileToItem(file, $item, $container)(file.size, file.name);
+                    $img.removeAttr("width height");
                     image.alt = file.name;
                     image.src = file.url;
                     return Promise.resolve();
@@ -470,8 +495,8 @@
         function optionThumbnail(file, $container) {
             var instance = getDropzone($container);
 
-            var a = getThumbnailRendererFromMimeType(file.type)(file, $container).catch(function (e) {
-                alert(e);
+            getThumbnailRendererFromMimeType(file.type)(file, $container).catch(function (e) {
+                console.error(e);
                 instance.removeFile(file);
             });
         }
@@ -580,10 +605,49 @@
             });
 
             $(".multidropzone__start", $container).on("click", function () {
+                $(".multidropzone__progress").show();
                 instance.processQueue();
             });
+
             instance.on("totaluploadprogress", function (progress) {
                 $(".multidropzone__progress", $container).val(progress);
+            }).on("removedfile", function () {
+                // if event raised, then file count is incomplete: hide call-to-action section
+                $(".multidropzone__call-to-action", $container).hide();
+            }).on("maxfilesreached", function () {
+                // event raised <=> all files added: show call-to-action section
+                $(".multidropzone__call-to-action", $container).show();
+            }).on("addedfile", function () {
+                $container.trigger("addedfile", {
+                    item: lastItemClickedOrDropped
+                });
+            }).on("sending", function (files, xhr, formData) {
+                $container.trigger("sendingmultiple", {
+                    items: $($.map(files, function (file) { return file.item; })).map(function () { return this.toArray(); }),
+                    xhr: xhr,
+                    formData: formData
+                });
+            }).on("errormultiple", function (files, message, xhr) {
+                for (var i = 0; i < files.length; i++) {
+                    console.log(message);
+                    files[i].item.addClass("multidropzone__item--fileerror");
+                }
+            }).on("successmultiple", function (files, responseText, e) {
+                $container.trigger("uploadsuccess", {
+                    items: $($.map(files, function (file) { return file.item; })).map(function () { return this.toArray(); }),
+                    responseText: responseText,
+                });
+            });
+
+            $(".multidropzone__edit", $container).on("click", false); // prevent bubbling: we don't want the whole target to be clickable now, only the exchange/remove buttons
+
+            $(".multidropzone__exchange", $container).on("click", function () {
+                $(this).closest(".multidropzone__target").mouseup().click(); // delegate to target click to exchange files
+            });
+
+            $(".multidropzone__remove", $container).on("click", function () {
+                var $item = $(this).closest(".multidropzone__item");
+                removeFileFromItem($item, $container);
             });
         }
 
@@ -602,13 +666,34 @@
          * @param {Function} done
          */
         function optionAccept(file, done) {
-            // if (lastItemClickedOrDropped == null) {
-            //     return done(""); // just pass non-null value
-            // }
             if (file.size === 0) {
                 console.warn("file", file.name, "0 length detected");
             }
             done();
+        }
+
+        /**
+         * Called by Dropzone to retreive the name of the file param that gets transferred.
+         * Note: the official documentation does not explain this option can be a function too, only a string.
+         *
+         * @param {Integer} i
+         * @param {jQuery} $container
+         */
+        function optionParamName(i, $container) {
+            var instance = getDropzone($container),
+                files = instance.getAcceptedFiles(),
+                $item = $(".multidropzone__item", $container).filter(function () {
+                    return $(this).data("file") === files[i];
+                }),
+                argEvent = {
+                    item: $item,
+                    param: "file" + (files.length > 0 ? "[" + i + "]" : "")
+                }
+            ;
+
+            $container.trigger("paramfilename", argEvent);
+
+            return argEvent.param;
         }
 
 
@@ -629,7 +714,21 @@
                 Dropzone.prototype = dropzoneOriginalPrototype; // restore prototype
             },
 
+            /**
+             * Getter/setter of options à la jQuery Widget Factory
+             * @param $container
+             * @param option
+             * @param val
+             */
+            option: function ($container, option, val) {
+                var instance = getDropzone($container);
 
+                if (typeof val !== "undefined") { // setter
+                    instance.options[option] = val;
+                } else { // getter
+                    return instance.options[option];
+                }
+            }
         };
 
         var dropzoneOriginalPrototype = Dropzone.prototype; // save original prototype
@@ -649,6 +748,7 @@
 
             return this.each(function (_, container) {
                 var $container = $(container);
+
                 if (typeof options === "string" && extensions[options]) { // method call ?
                     extensions[options].apply(null, [$container].concat(otherArgs)); // invoke the method
                     return;

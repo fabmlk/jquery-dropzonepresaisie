@@ -21,6 +21,24 @@
     overflow: hidden; /* don't know why yet, but some resized thumbnails can still overflow, so we prevent this in CSS */
 }
 
+.multidropzone__item--fileerror .multidropzone__target {
+    color: darkred;
+    border-style: solid;
+}
+
+.multidropzone__item--fileerror .multidropzone__target::after {
+    content: "";
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    opacity: 0.5;
+    background: linear-gradient(rgba(139, 0, 0, 0.5), rgba(139, 0, 0, 0.5)),
+                linear-gradient(to left top, transparent 47.75%, darkred 49.5%, darkred 50.5%, transparent 52.25%);
+}
+
 .multidropzone__target--dragover,
 .multidropzone__target:hover {
     cursor: pointer;
@@ -30,6 +48,7 @@
 .multidropzone__item--fileadded .multidropzone__upload-invitation {
     display: none;
 }
+
 
 .multidropzone__upload-invitation {
     display: block;
@@ -55,6 +74,7 @@
     right: 0;
     bottom: 0;
     text-align: center;
+    z-index: 1; /* parent uses ::after pseudo class but we want it be actually behind the edit child */
 }
 
 .multidropzone__exchange, .multidropzone__delete {
@@ -76,7 +96,7 @@
     cursor: default; /* cursor:auto does not work properly on IE8+, see http://stackoverflow.com/questions/36092736/internet-explorer-cursor-auto */
 }
 
-.multidropzone__delete {
+.multidropzone__remove {
     cursor: pointer;
 }
 
@@ -94,4 +114,9 @@
     font-size: 3em;
     position: absolute;
     right: 0;
+}
+
+.multidropzone__call-to-action,
+.multidropzone__progress {
+    display: none;
 }
