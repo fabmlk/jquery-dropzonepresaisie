@@ -1,4 +1,4 @@
-.multidropzone {
+.multidropzone__item-container {
     display: flex;
     flex-flow: row wrap;
     justify-content: space-around;
@@ -14,11 +14,13 @@
     position: relative;
     margin: auto;
     justify-content: center;
-    align-items: center;
-    border: dashed 3px;
     height: 400px; /* width is defined on the parent item */
-    color: #c9c9c9;
+    align-items: center;
     overflow: hidden; /* don't know why yet, but some resized thumbnails can still overflow, so we prevent this in CSS */
+
+    border: dashed 3px;
+
+    color: #c9c9c9;
 }
 
 .multidropzone__item--fileerror .multidropzone__target {
@@ -34,9 +36,9 @@
     top: 0;
     right: 0;
     bottom: 0;
-    opacity: 0.5;
+
     background: linear-gradient(rgba(139, 0, 0, 0.5), rgba(139, 0, 0, 0.5)),
-                linear-gradient(to left top, transparent 47.75%, darkred 49.5%, darkred 50.5%, transparent 52.25%);
+                linear-gradient(to left top, transparent 49.5%, darkred 49.8%, darkred 50.2%, transparent 50.5%);
 }
 
 .multidropzone__target--dragover,
@@ -73,8 +75,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    text-align: center;
     z-index: 1; /* parent uses ::after pseudo class but we want it be actually behind the edit child */
+
+    text-align: center;
 }
 
 .multidropzone__exchange, .multidropzone__delete {
@@ -97,26 +100,75 @@
 }
 
 .multidropzone__remove {
+    position: absolute;
+    right: 0;
+    font-size: 3em;
     cursor: pointer;
+
+    display: none; /* this is an option: for now we decide we don't need it. If we change our mind later we need to remove this line. */
 }
 
 .multidropzone__exchange {
     line-height: 400px;
+    padding: 1em;
+    border-radius: 5px;
+
+    background-color: lemonchiffon;
     cursor: pointer;
 }
 
-.multidropzone__feedback--error{
-    background-color: lightcoral;
-    border: 1px solid darkred;
+
+.multidropzone__call-to-action-container {
+    padding: 1em;
+    border-top: 1px solid #ddd;
+    background-color: #f9f9f9;
 }
 
-.multidropzone__remove {
-    font-size: 3em;
-    position: absolute;
-    right: 0;
+.multidropzone__call-to-action {
+    display: flex;
+    align-items: center;
 }
 
-.multidropzone__call-to-action,
+/* http://css3buttongenerator.com/ */
+.multidropzone__start {
+    padding: 10px 20px 10px 20px;
+    margin-right: 2em;
+
+    border-radius: 8px;
+
+    background: #048a18;
+    background-image: linear-gradient(to bottom, #048a18, #005703);
+
+    font-family: Arial;
+    font-size: 20px;
+    color: #ffffff;
+    text-decoration: none;
+
+    cursor: pointer;
+}
+
+.multidropzone__start:hover {
+    background: #02a80d;
+    background-image: linear-gradient(to bottom, #02a80d, #038a10);
+}
+
+.multidropzone__call-to-action--disabled .multidropzone__start,
+.multidropzone__call-to-action--disabled .multidropzone__start:hover,
+.multidropzone__call-to-action--uploading .multidropzone__start,
+.multidropzone__call-to-action--uploading .multidropzone__start:hover {
+    background: #a8a8a8;
+    background-image: linear-gradient(to bottom, #a8a8a8, #8a8a8a);
+    cursor: not-allowed;
+}
+
 .multidropzone__progress {
     display: none;
+}
+
+.multidropzone__call-to-action--uploading .multidropzone__progress {
+    display: block;
+}
+
+.multidropzone__feedback--error {
+    color: darkred;
 }

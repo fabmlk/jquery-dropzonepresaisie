@@ -51,17 +51,18 @@
             promptPages: function (o, done) {
                 done({1: o.item});
             },
-
+            // delay to add to the upload progress cue before considering the upload is finished
+            serversideDelayInSeconds: 0,
             // template for call-to-action
             callToActionTemplate: '' +
-            '<div class="multidropzone__call-to-action">' +
-            '	<div class="multidropzone__feedback"></div>' +
+            '<div class="multidropzone__call-to-action multidropzone__call-to-action--disabled">' +
+            '	<a class="multidropzone__start">Valider</a>' +
             '	<div class="multidropzone__upload">' +
-            '		<progress class="multidropzone__progress">' +
+            '		<progress class="multidropzone__progress" max="100">' +
             '			<strong class="multidropzone__progress-fallback"></strong>' +
             '		</progress>' +
             '	</div>' +
-            '	<button class="multidropzone__start">Valider</button>' +
+            '	<div class="multidropzone__feedback"></div>' +
             '</div>',
 
 
@@ -307,14 +308,19 @@
          * @param {jQuery} $container - our custom plugin container
          */
         function buildDropTargets(options, $container) {
-            var $dropzoneTarget;
+            var $dropzoneTarget,
+                $itemContainer = $("<div class='multidropzone__item-container'>"),
+                $callToActionContainer = $("<div class='multidropzone__call-to-action-container'>")
+            ;
+
+            $container.append($itemContainer, $callToActionContainer);
 
             for (var i = 0; i < options.numFiles; i++) {
                 $dropzoneTarget = $(options.previewTemplate);
                 $dropzoneTarget.find(".multidropzone__upload-invitation").html(options.uploadInvitation[i]);
-                $container.append($dropzoneTarget);
+                $itemContainer.append($dropzoneTarget);
             }
-            $container.append(options.callToActionTemplate);
+            $callToActionContainer.append(options.callToActionTemplate);
         }
 
         /**
@@ -394,7 +400,7 @@
                 var canvas = $canvas.get(0);
                 var context = canvas.getContext('2d');
 
-                $nextItem.removeClass("multidropzone__item--fileadded");
+                $nextItem.removeClass("multidropzone__item--fileadded multidropzone__item--fileerror");
                 // reset canvas
                 context.clearRect(0, 0, canvas.width, canvas.height);
                 $canvas.attr({width: 0, height: 0});
@@ -588,7 +594,9 @@
          * @param {jQuery} $container - our custom closured plugin container
          */
         function optionInit($container) {
-            var instance = getDropzone($container);
+            var instance = getDropzone($container),
+                $progress = $(".multidropzone__progress", $container),
+                $sectionCTA = $(".multidropzone__call-to-action", $container);
 
             // We don't use "click" here because IE11/Edge fire "change" and "click" in the wrong order.
             // It should be first "click", then "change", but they fire the other way round:
@@ -597,46 +605,103 @@
             // does not execute to set lastItemClickedOrDropped correctly.
             // The trick used here is then to listen on "mouseup" instead, which is indeed fired before "change" as we want.
             $(".multidropzone__target", $container).on("mouseup", function () {
-                lastItemClickedOrDropped = $(this).closest(".multidropzone__item"); // save item
-            }).on("dragover dragenter", function () {
-                $(this).addClass("multidropzone__target--dragover"); // css feedback
-            }).on("dragend dragleave drop", function () {
-                $(this).removeClass("multidropzone__target--dragover"); // css feedback
+                    lastItemClickedOrDropped = $(this).closest(".multidropzone__item"); // save item
+                })
+
+                .on("dragover dragenter", function () {
+                    $(this).addClass("multidropzone__target--dragover"); // css feedback
+                })
+
+                .on("dragend dragleave drop", function () {
+                    $(this).removeClass("multidropzone__target--dragover"); // css feedback
             });
 
             $(".multidropzone__start", $container).on("click", function () {
-                $(".multidropzone__progress").show();
+                if ($sectionCTA.hasClass("multidropzone__call-to-action--disabled")) {
+                    return false;
+                }
+                $sectionCTA.addClass("multidropzone__call-to-action--uploading");
                 instance.processQueue();
             });
 
             instance.on("totaluploadprogress", function (progress) {
-                $(".multidropzone__progress", $container).val(progress);
-            }).on("removedfile", function () {
-                // if event raised, then file count is incomplete: hide call-to-action section
-                $(".multidropzone__call-to-action", $container).hide();
-            }).on("maxfilesreached", function () {
-                // event raised <=> all files added: show call-to-action section
-                $(".multidropzone__call-to-action", $container).show();
-            }).on("addedfile", function () {
-                $container.trigger("addedfile", {
-                    item: lastItemClickedOrDropped
-                });
-            }).on("sending", function (files, xhr, formData) {
-                $container.trigger("sendingmultiple", {
-                    items: $($.map(files, function (file) { return file.item; })).map(function () { return this.toArray(); }),
-                    xhr: xhr,
-                    formData: formData
-                });
-            }).on("errormultiple", function (files, message, xhr) {
-                for (var i = 0; i < files.length; i++) {
-                    console.log(message);
-                    files[i].item.addClass("multidropzone__item--fileerror");
-                }
-            }).on("successmultiple", function (files, responseText, e) {
-                $container.trigger("uploadsuccess", {
-                    items: $($.map(files, function (file) { return file.item; })).map(function () { return this.toArray(); }),
-                    responseText: responseText,
-                });
+                    var max = parseInt($progress.attr("max"), 10), // typically 100%
+                        limit = max * 0.9 // typically 90% (increase to stop progress refresh later, descrease to stop earlier)
+                    ;
+
+                    $progress.val(progress * 0.2);
+
+                    if (progress == 100) {
+                        progress = max * 0.2; // typically 20%
+                        var framesPerSecond = 10; // increase to speed up progress refresh, decrease to slow down
+
+                        var delay = instance.options.serversideDelayInSeconds /* can be 0 */ || 1;
+                        var unitProgress = (limit - progress) /* typically 90% - 20% = 70% */ / (delay * framesPerSecond) /* 1 if delay == framesPerSecond */;
+
+                        function updateProgress() {
+                            setTimeout(function () {
+                                progress = Math.min(progress + unitProgress, limit);
+                                $progress.val(progress);
+
+                                if (progress < limit) {
+                                    requestAnimationFrame(updateProgress);
+                                }
+                            }, 1000 / framesPerSecond);
+                        }
+                        updateProgress();
+                    }
+                })
+
+                .on("removedfile", function () {
+                    // in our process, removedfile can be triggered several times for the same file removal
+                    // so we have also to check explicitly if file count is low.
+                    if (instance.getAcceptedFiles().length < instance.options.numFiles) {
+                        $sectionCTA.addClass("multidropzone__call-to-action--disabled")
+                            .find(".multidropzone__feedback").empty();
+                    }
+                })
+
+                .on("maxfilesreached", function () {
+                    // event raised <=> all files added: enable call-to-action section
+                    $sectionCTA.removeClass("multidropzone__call-to-action--disabled");
+                })
+
+                .on("addedfile", function () {
+                    $container.trigger("addedfile", {
+                        item: lastItemClickedOrDropped
+                    });
+                })
+
+                .on("sendingmultiple", function (files, xhr, formData) {
+                    $container.trigger("beforeupload", {
+                        items: $($.map(files, function (file) { return file.item; })).map(function () { return this.toArray(); }),
+                        xhr: xhr,
+                        formData: formData
+                    });
+                })
+
+                .on("errormultiple", function (files, message, xhr) {
+                    for (var i = 0; i < files.length; i++) {
+                        console.log(message);
+                        files[i].item.addClass("multidropzone__item--fileerror");
+                    }
+                    $progress.val(100);
+                })
+
+                .on("successmultiple", function (files, responseText, e) {
+                    $container.trigger("uploadsuccess", {
+                        items: $($.map(files, function (file) { return file.item; })).map(function () { return this.toArray(); }),
+                        responseText: responseText,
+                    });
+                })
+                // fired by Dropzone after errormultiple or successmultiple, no matter what
+                .on("completemultiple", function () {
+                    var max = parseInt($progress.attr("max"), 10); // typically 100%
+
+                    $progress.val(max);
+
+                    $sectionCTA.removeClass("multidropzone__call-to-action--uploading").addClass("multidropzone__call-to-action--disabled");
+                    // instance.removeAllFiles();
             });
 
             $(".multidropzone__edit", $container).on("click", false); // prevent bubbling: we don't want the whole target to be clickable now, only the exchange/remove buttons
@@ -702,7 +767,7 @@
         var extensions = {
             /**
              * destroy our plugin
-             * @param $container
+             * @param {jQuery} $container
              */
             destroy: function ($container) {
                 var instance = getDropzone($container);
@@ -716,9 +781,9 @@
 
             /**
              * Getter/setter of options à la jQuery Widget Factory
-             * @param $container
-             * @param option
-             * @param val
+             * @param {jQuery} $container
+             * @param {String} option
+             * @param {*} val
              */
             option: function ($container, option, val) {
                 var instance = getDropzone($container);
@@ -728,6 +793,16 @@
                 } else { // getter
                     return instance.options[option];
                 }
+            },
+
+            /**
+             * Display error feedback in the feedback zone
+             * @param {jQuery} $container
+             * @param {String} content - html string
+             */
+            errorfeedback: function ($container, content) {
+                $container.find(".multidropzone__item").addClass("multidropzone__item--fileerror");
+                $container.find(".multidropzone__feedback").addClass("multidropzone__feedback--error").html(content);
             }
         };
 
