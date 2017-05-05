@@ -12,7 +12,7 @@
 .multidropzone__target {
     display: flex;
     position: relative;
-    margin: auto;
+    margin: 1em auto;
     justify-content: center;
     height: 400px; /* width is defined on the parent item */
     align-items: center;
@@ -25,20 +25,34 @@
 
 .multidropzone__item--fileerror .multidropzone__target {
     color: darkred;
-    border-style: solid;
 }
 
-.multidropzone__item--fileerror .multidropzone__target::after {
+.multidropzone__item--filesuccess .multidropzone__target {
+    color: darkgreen;
+}
+
+.multidropzone__target::after {
     content: "";
-    display: block;
+
     position: absolute;
     left: 0;
     top: 0;
     right: 0;
     bottom: 0;
 
-    background: linear-gradient(rgba(139, 0, 0, 0.5), rgba(139, 0, 0, 0.5)),
-                linear-gradient(to left top, transparent 49.5%, darkred 49.8%, darkred 50.2%, transparent 50.5%);
+    font-size: 10em;
+    line-height: 400px;
+    text-align: center;
+}
+
+.multidropzone__item--filesuccess .multidropzone__target::after {
+    content: "✔";
+    background: linear-gradient(rgba(27, 139, 52, 0.5), rgba(190, 202, 193, 0.5));
+}
+
+.multidropzone__item--fileerror .multidropzone__target::after {
+    content: "🛇";
+    background: linear-gradient(rgba(139, 0, 0, 0.5), rgb(214, 206, 206));
 }
 
 .multidropzone__target--dragover,
@@ -110,13 +124,13 @@
 
 .multidropzone__exchange {
     line-height: 400px;
-    padding: 1em;
-    border-radius: 5px;
 
-    background-color: lemonchiffon;
     cursor: pointer;
 }
 
+.multidropzone__filename {
+    text-align: center;
+}
 
 .multidropzone__call-to-action-container {
     padding: 1em;
@@ -129,21 +143,7 @@
     align-items: center;
 }
 
-/* http://css3buttongenerator.com/ */
 .multidropzone__start {
-    padding: 10px 20px 10px 20px;
-    margin-right: 2em;
-
-    border-radius: 8px;
-
-    background: #048a18;
-    background-image: linear-gradient(to bottom, #048a18, #005703);
-
-    font-family: Arial;
-    font-size: 20px;
-    color: #ffffff;
-    text-decoration: none;
-
     cursor: pointer;
 }
 
@@ -171,4 +171,8 @@
 
 .multidropzone__feedback--error {
     color: darkred;
+}
+
+.multidropzone__feedback--success {
+    color: darkgreen;
 }
