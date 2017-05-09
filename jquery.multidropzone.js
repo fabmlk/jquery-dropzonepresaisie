@@ -20,6 +20,7 @@
 
         Dropzone.autoDiscover = false; // we don't want Dropzone to attach itself on DOMContentLoaded
 
+
         // we need to keep track manually of what item a selected file come from
         // Note: the dropzone is actually a .multidropzone__target element, not the .multidropzone__item parent element,
         // but as we will more often use a reference to the item parent, we save in here directly
@@ -60,7 +61,7 @@
             callToActionTemplate: '' +
             '<div class="multidropzone__call-to-action">' +
             '	<a class="multidropzone__start">Valider</a>' +
-            '	<div class="multidropzone__upload">' +
+            '	<div class="multidropzone__progress-container">' +
             '		<progress class="multidropzone__progress" max="100">' +
             '			<strong class="multidropzone__progress-fallback"></strong>' +
             '		</progress>' +
@@ -872,6 +873,31 @@
              */
             infofeedback: function (content, $container) {
                 $(".multidropzone__feedback", $container).removeClass("multidropzone__feedback--success multidropzone__feedback--fileerror").html(content);
+            },
+
+            /**
+             * Add a file programmatically to an item.
+             *
+             * @param {File} file
+             * @param {jQuery} $item
+             * @param {jQuery} $container
+             */
+            addfile: function (file, $item, $container) {
+                var instance = getDropzone($container);
+
+                lastItemClickedOrDropped = $item; // our whole process depends on it!
+                // do not use our overriden addFile as we don't allow more than one file in the same tick
+                // instead use the native Dropzone's
+                Dropzone.prototype.addFile.call(instance, file);
+            },
+
+            /**
+             * Returns a file associated to an item, if any
+             * @param {jQuery} $item
+             * @returns {File|undefined}
+             */
+            getfile: function ($item) {
+                return $item.data("file");
             }
         };
 
@@ -881,8 +907,9 @@
         // cancel drag & drop outside our dropzones
         $(document.body).on("drop dragover", false);
 
+
         /**
-         * TODO
+         * jQuery plugin constructor
          *
          * @param options
          * @returns {$.fn}
