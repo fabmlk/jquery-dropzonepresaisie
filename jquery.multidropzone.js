@@ -30,12 +30,12 @@
             /**** Custom options ****/
 
             numFiles: 1, // number of files to handle
-            // html content to display inside the .multidropzone__upload-invitation nodes of the drop targets.
+            // html content to display inside the .multidropzone__title nodes of the drop targets.
             // If this option is an array, the n-th element will be used in the n-th drop target, in DOM order.
             // If the array length is < numFiles or the array contains falsy values, this default text
             // is used as a replacement.
-            uploadInvitation: "Déposez ou sélectionnez votre fichier",
-            // Filename or array of filenames to use for the uploaded files. Same rules as uploadInvitation, but with an array-like access notation appended
+            title: "Déposez ou sélectionnez votre fichier",
+            // Filename or array of filenames to use for the uploaded files. Same rules as title, but with an array-like access notation appended
             // by default if numFiles > 1 (file[0], file[1], file[2]...)
             filename: "file",
             // function that prompts the user about page dispatch if pdf's num pages is > numFiles
@@ -58,7 +58,7 @@
             serversideDelayInSeconds: 0,
             // template for call-to-action
             callToActionTemplate: '' +
-            '<div class="multidropzone__call-to-action multidropzone__call-to-action--disabled js-disabled">' +
+            '<div class="multidropzone__call-to-action">' +
             '	<a class="multidropzone__start">Valider</a>' +
             '	<div class="multidropzone__upload">' +
             '		<progress class="multidropzone__progress" max="100">' +
@@ -67,10 +67,6 @@
             '	</div>' +
             '	<div class="multidropzone__feedback"></div>' +
             '</div>',
-            // class to add to style the exchange button
-            exchangeButtonClass: "",
-            // class to add to style the start button
-            startButtonClass: "",
 
             /**** Dropzone plugin options ****/
 
@@ -81,16 +77,16 @@
             // trick: used online html-to-string formatter http://pojo.sodhanalibrary.com/string.html
             previewTemplate: '' +
             '<div class="multidropzone__item">' +
+            '   <div class="multidropzone__title"></div>' +
             '	<div class="multidropzone__target">' +
-            '		<div class="multidropzone__upload-invitation fa fa-upload" aria-hidden="true">' +
-            '		</div>' +
+            '		<div class="multidropzone__uploadicon" aria-hidden="true"></div>' +
             '		<div class="multidropzone__preview">' +
             '			<img width="0" height="0" class="multidropzone__drawing" />' +
             '			<canvas class="multidropzone__drawing" width="0" height="0"></canvas>' +
             '		</div>' +
             '		<div class="multidropzone__edit">' +
             '           <span class="multidropzone__remove">&#x2716;</span>' +
-            '			<span class="multidropzone__exchange">&#x1f5c0; Modifier</span>' +
+            '			<span class="multidropzone__exchange">modifier</span>' +
             '		</div>' +
             '	</div>' +
             '	<div class="multidropzone__info">' +
@@ -318,13 +314,13 @@
 
             for (var i = 0; i < options.numFiles; i++) {
                 $dropzoneTarget = $(options.previewTemplate);
-                $dropzoneTarget.find(".multidropzone__upload-invitation").html(options.uploadInvitation[i]);
-                $dropzoneTarget.find(".multidropzone__exchange").addClass(options.exchangeButtonClass);
+                $dropzoneTarget.find(".multidropzone__title").html(options.title[i]);
                 $itemContainer.append($dropzoneTarget);
             }
 
             $callToActionContainer.append(options.callToActionTemplate);
-            $callToActionContainer.find(".multidropzone__start").addClass(options.startButtonClass);
+            $callToActionContainer.find(".multidropzone__start")
+                .addClass("js-disabled multidropzone__start--disabled");
         }
 
         /**
@@ -369,21 +365,21 @@
 
             var finalOptions = $.extend({}, defaults, dropzoneOptions, overrideOptions);
 
-            // normalize uploadInvitation & filename options
-            if (!$.isArray(finalOptions.uploadInvitation)) {
-                finalOptions.uploadInvitation = [finalOptions.uploadInvitation];
+            // normalize title & filename options
+            if (!$.isArray(finalOptions.title)) {
+                finalOptions.title = [finalOptions.title];
             }
             if (!$.isArray(finalOptions.filename)) {
                 finalOptions.filename = [finalOptions.filename];
             }
-            for (var i = 0; i < finalOptions.maxFiles; i++) {
-                finalOptions.uploadInvitation[i] = finalOptions.uploadInvitation[i] || defaults.uploadInvitation;
-                finalOptions.filename[i] = finalOptions.filename[i] || (finalOptions.maxFiles > 1 ? defaults.filename + '[' + i + ']' : '');
+            for (var i = 0; i < finalOptions.numFiles; i++) {
+                finalOptions.title[i] = finalOptions.title[i] || defaults.title;
+                finalOptions.filename[i] = finalOptions.filename[i] || (finalOptions.numFiles > 1 ? defaults.filename + '[' + i + ']' : '');
             }
 
             buildMultiDropzone(finalOptions, $container);
 
-            // set targets as being clickable for file selection
+            // set targets as being Dropzone-clickable for file selection
             finalOptions.clickable = $(".multidropzone__target", $container).toArray();
             finalOptions.maxFiles = finalOptions.numFiles;
 
@@ -631,6 +627,10 @@
                 currentProgress = $progress.val() || 0 // next value will be tested against this one to prevent flickering
             ;
 
+            // it is possible that progress received is NaN, for instance when CORS is not valid.
+            // This happens because Dropzone executes e.loaded / e.total, but e.total would be 0 in that case.
+            // Let's default to 0
+            progress = progress || 0;
             $progress.val(Math.max(progress * 0.2, currentProgress)); // up to 20% total of the progress bar
 
             if (progress == 100) {
@@ -669,41 +669,52 @@
             var instance = getDropzone($container),
                 $progress = $(".multidropzone__progress", $container),
                 progressMax = parseInt($progress.attr("max"), 10), // typically 100%
-                $sectionCTA = $(".multidropzone__call-to-action", $container);
+                $sectionCTA = $(".multidropzone__call-to-action", $container),
+                $btnStart = $sectionCTA.find(".multidropzone__start")
+            ;
 
             // Our custom UI handlers
             //-----------------------------------------------------
 
+            // We want to save what was the last item clicked.
             // We don't use "click" here because IE11/Edge fire "change" and "click" in the wrong order.
             // It should be first "click", then "change", but they fire the other way round:
             // https://connect.microsoft.com/IE/feedback/details/2255779/edge-ie11-checkbox-input-fires-click-change-events-in-wrong-order
-            // As Dropzone attaches a "change" event on its hidden file input to start processing the file, the result is that our click handler
+            // As Dropzone attaches a "change" event on its hidden file input to open the dialog window, the result is that our click handler
             // does not execute to set lastItemClickedOrDropped correctly.
-            // The trick used here is then to listen on "mouseup" instead, which is indeed fired before "change" as we want.
-            $(".multidropzone__target", $container).on("mouseup", function () {
+            // The trick used here is then to listen on "mousedown" instead, which is indeed always fired before "change" as we want.
+            //
+            // Now, why not use mouseup instead ?
+            // Edge case: on Windows (others not tested), a double-click inside the Windows Explorer is actually fired on the second mousedown,
+            // not mouseup nor click.
+            // It means that when you double-click a file to select in the opened dialog window without releasing the mouse button on the 2nd click,
+            // the file gets selected and the dialog window closes. Now if we release the mouse button, this causes a final mouseup event
+            // inside the DOM: if this event is triggered while we are above a different dropzone, then the last item clicked will be this
+            // other dropzone instead of the one originally clicked !
+            $(".multidropzone__target", $container).on("mousedown", function () {
                     lastItemClickedOrDropped = $(this).closest(".multidropzone__item"); // save item
                 })
 
-                .on("dragover dragenter", function () {
-                    $(this).addClass("multidropzone__target--dragover"); // css feedback
+                .on("mouseenter dragover dragenter", function () {
+                    $(this).addClass("multidropzone__target--hover");
                 })
 
-                .on("dragend dragleave drop", function () {
-                    $(this).removeClass("multidropzone__target--dragover"); // css feedback
+                .on("mouseleave dragend dragleave drop", function () {
+                    $(this).removeClass("multidropzone__target--hover");
             });
 
-            $(".multidropzone__start", $container).on("click", function () {
-                if ($sectionCTA.hasClass("js-disabled")) {
+            $btnStart.on("click", function () {
+                if ($(this).hasClass("js-disabled")) {
                     return false;
                 }
-                $sectionCTA.addClass("multidropzone__call-to-action--uploading");
+                $container.addClass("multidropzone--uploading");
                 instance.processQueue();
             });
 
             $(".multidropzone__edit", $container).on("click", false); // prevent bubbling: we don't want the whole target to be clickable now, only the exchange/remove buttons
 
             $(".multidropzone__exchange", $container).on("click", function () {
-                $(this).closest(".multidropzone__target").mouseup().click(); // delegate to target click to exchange files
+                $(this).closest(".multidropzone__target").mousedown().click(); // delegate to target click to exchange files
             });
 
             $(".multidropzone__remove", $container).on("click", function () {
@@ -717,7 +728,7 @@
                 // We don't listen to the "addedfile" event since by the time this event is fired, thumbnails have not
                 // been rendered yet (asynchronous).
                 if ($(".multidropzone__item--fileadded", $container).length === instance.options.numFiles) {
-                    $sectionCTA.removeClass("js-disabled multidropzone__call-to-action--disabled");
+                    $btnStart.removeClass("js-disabled multidropzone__start--disabled");
                 }
             });
 
@@ -728,13 +739,13 @@
                     // in our process, removedfile can be triggered several times for the same file removal
                     // so we have also to check explicitly if file count is low.
                     if ($(".multidropzone__item--fileadded", $container).length < instance.options.numFiles) {
-                        $sectionCTA.addClass("js-disabled multidropzone__call-to-action--disabled")
-                            .find(".multidropzone__feedback").empty();
+                        $btnStart.addClass("js-disabled multidropzone__start--disabled");
+                        $sectionCTA.find(".multidropzone__feedback").empty();
                     }
                 })
                 // upload was canceled
                 .on("canceledmultiple", function () {
-                    $sectionCTA.removeClass("multidropzone__call-to-action--uploading");
+                    $container.removeClass("multidropzone--uploading");
                     $progress.val(0); // reset
                     $container.trigger("uploadcancel");
                 })
@@ -761,8 +772,8 @@
                 // fired by Dropzone after errormultiple or successmultiple, no matter what
                 .on("completemultiple", function () {
                     $progress.val(progressMax);
-                    $sectionCTA.removeClass("multidropzone__call-to-action--uploading")
-                        .addClass("js-disabled multidropzone__call-to-action--disabled");
+                    $container.removeClass("multidropzone--uploading");
+                    $btnStart.addClass("js-disabled multidropzone__start--disabled");
             });
         }
 

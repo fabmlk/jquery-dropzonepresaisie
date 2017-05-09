@@ -1,37 +1,10 @@
-.multidropzone__item-container {
-    display: flex;
-    flex-flow: row wrap;
-    justify-content: space-around;
-}
-
-.multidropzone__item {
-    padding: 1em;
-    width: 400px;
-}
-
 .multidropzone__target {
-    display: flex;
-    position: relative;
-    margin: 1em auto;
-    justify-content: center;
-    height: 400px; /* width is defined on the parent item */
-    align-items: center;
     overflow: hidden; /* don't know why yet, but some resized thumbnails can still overflow, so we prevent this in CSS */
-
-    border: dashed 3px;
-
-    color: #c9c9c9;
-}
-
-.multidropzone__item--fileerror .multidropzone__target {
-    color: darkred;
-}
-
-.multidropzone__item--filesuccess .multidropzone__target {
-    color: darkgreen;
 }
 
 .multidropzone__target::after {
+    /* we generate a last child taking up the entire area to pave the way for
+       additional styling on item success or failure (background gradient, centered icon, ...) */
     content: "";
 
     position: absolute;
@@ -39,140 +12,32 @@
     top: 0;
     right: 0;
     bottom: 0;
-
-    font-size: 10em;
-    line-height: 400px;
-    text-align: center;
-}
-
-.multidropzone__item--filesuccess .multidropzone__target::after {
-    content: "✔";
-    background: linear-gradient(rgba(27, 139, 52, 0.5), rgba(190, 202, 193, 0.5));
-}
-
-.multidropzone__item--fileerror .multidropzone__target::after {
-    content: "🛇";
-    background: linear-gradient(rgba(139, 0, 0, 0.5), rgb(214, 206, 206));
-}
-
-.multidropzone__target--dragover,
-.multidropzone__target:hover {
-    cursor: pointer;
-    color: #000;
-}
-
-.multidropzone__item--fileadded .multidropzone__upload-invitation {
-    display: none;
-}
-
-
-.multidropzone__upload-invitation {
-    display: block;
-    text-align: center;
-    font-size: 1.2em;
-}
-
-
-
-.multidropzone__upload-invitation::before {
-    /* "content:" is already defined by font-awesome */
-    display: block;
-    font-size: 5em;
-    text-align: center;
-    color: inherit;
 }
 
 .multidropzone__edit {
+    /* the edit zone will take up the entire area of the parent target */
     position: absolute;
-    display: none;
+    display: none; /* will show on hover */
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 1; /* parent uses ::after pseudo class but we want it be actually behind the edit child */
-
-    text-align: center;
-}
-
-.multidropzone__exchange, .multidropzone__delete {
-    font-size: 2em;
-}
-
-.multidropzone__target:hover .multidropzone__drawing {
-    filter: blur(5px);
-}
-
-/* IE does not support css filters */
-.ie .multidropzone__target:hover .multidropzone__drawing {
-    background-color: #c9c9c9;
-    opacity: 0.5;
+    z-index: 1; /* target parent uses ::after pseudo class to generate a last child,
+                   but we want this edit child to be actually in front of everything */
 }
 
 .multidropzone__item--fileadded .multidropzone__target:hover .multidropzone__edit {
     display: block;
-    cursor: default; /* cursor:auto does not work properly on IE8+, see http://stackoverflow.com/questions/36092736/internet-explorer-cursor-auto */
+    cursor: default; /* cursor:auto does not work properly on IE8+,
+                        see http://stackoverflow.com/questions/36092736/internet-explorer-cursor-auto */
 }
 
-.multidropzone__remove {
-    position: absolute;
-    right: 0;
-    font-size: 3em;
-    cursor: pointer;
-
-    display: none; /* this is an option: for now we decide we don't need it. If we change our mind later we need to remove this line. */
-}
-
-.multidropzone__exchange {
-    line-height: 400px;
-
-    cursor: pointer;
-}
-
-.multidropzone__filename {
-    text-align: center;
-}
-
-.multidropzone__call-to-action-container {
-    padding: 1em;
-    border-top: 1px solid #ddd;
-    background-color: #f9f9f9;
-}
-
-.multidropzone__call-to-action {
-    display: flex;
-    align-items: center;
-}
-
-.multidropzone__start {
-    cursor: pointer;
-}
-
-.multidropzone__start:hover {
-    background: #02a80d;
-    background-image: linear-gradient(to bottom, #02a80d, #038a10);
-}
-
-.multidropzone__call-to-action--disabled .multidropzone__start,
-.multidropzone__call-to-action--disabled .multidropzone__start:hover,
-.multidropzone__call-to-action--uploading .multidropzone__start,
-.multidropzone__call-to-action--uploading .multidropzone__start:hover {
-    background: #a8a8a8;
-    background-image: linear-gradient(to bottom, #a8a8a8, #8a8a8a);
-    cursor: not-allowed;
-}
-
-.multidropzone__progress {
+.multidropzone__item--fileadded .multidropzone__uploadicon {
     display: none;
 }
 
-.multidropzone__call-to-action--uploading .multidropzone__progress {
-    display: block;
-}
-
-.multidropzone__feedback--error {
-    color: darkred;
-}
-
-.multidropzone__feedback--success {
-    color: darkgreen;
+.multidropzone__filename {
+    overflow: hidden;
+    white-space: nowrap; /* force on a single line */
+    text-overflow: ellipsis;
 }
