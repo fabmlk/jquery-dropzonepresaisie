@@ -184,7 +184,8 @@
                     if (ret && typeof ret.then === "function") { // we got a promise
                         promptDfd = ret;
                     }
-                    promptDfd.then(function (pageMaps) {
+
+                    return promptDfd.then(function (pageMaps) {
                         if (!$.isPlainObject(pageMaps)) {
                             throw new Error("Expected object of the form {<numPage>: <target node>, ...}");
                         }
@@ -213,7 +214,6 @@
                             // there is only just one.
                             pagePromises.push(renderPage(pdf, numPage, $item.find("canvas"), $container));
                         });
-
                         return Promise.all(pagePromises);
                     });
                 } else { // only one page
@@ -763,12 +763,12 @@
                     $container.trigger("uploadstart");
                 })
                 // upload or failure or server responded NOK
-                .on("errormultiple", function (files, message, xhr) {
-                    $container.trigger("uploadfailure", message);
+                .on("errormultiple", function (files, responseText, xhr) {
+                    $container.trigger("uploadfailure", { files: files, message: responseText });
                 })
                 // server responded OK
                 .on("successmultiple", function (files, responseText, e) {
-                    $container.trigger("uploadsuccess", responseText);
+                    $container.trigger("uploadsuccess", { files: files, message: responseText });
                 })
                 // fired by Dropzone after errormultiple or successmultiple, no matter what
                 .on("completemultiple", function () {
@@ -824,9 +824,11 @@
                 var instance = getDropzone($container);
 
                 if (typeof instance.destroy === "function") { // not yet documented but exists in Dropzone's source code
-                    instance.destroy();
+                    // invoke parent
+                    // (warning: we squashed out its prototype with our extensions, so we have to use the original one)
+                    dropzoneOriginalPrototype.destroy.call(instance);
                 }
-                $container.removeClass("multidropzone");
+                $container.removeClass("multidropzone").empty();
                 Dropzone.prototype = dropzoneOriginalPrototype; // restore prototype
             },
 
@@ -877,18 +879,40 @@
 
             /**
              * Add a file programmatically to an item.
+             * Adding a file is asynchronous, so we return a promise to let the user know when we're through.
+             * Warning: calling addfile multiple times on the same multidropzone instance without waiting for the resolved promise might cause invalid state!
+             *          Reason: lastItemClickedOrDropped will be certainly assigned to the wrong item by the time our asynchronous rendering needs it.
              *
              * @param {File} file
              * @param {jQuery} $item
              * @param {jQuery} $container
+             * @returns {Promise}
              */
             addfile: function (file, $item, $container) {
-                var instance = getDropzone($container);
+                var instance = getDropzone($container),
+                    dfd = $.Deferred();
 
                 lastItemClickedOrDropped = $item; // our whole process depends on it!
+
+                // remove previous file state by trimming the file from all expandos added either by Dropzone or our plugin
+                // this is mandatory or else Dropzone gets confused.
+                // Ex: adding a file that already has accepted = true will cause Dropzone to reject the file as getAcceptedFiles().length > maxFiles
+                for (var mayBeExpando in file) {
+                    if (file.hasOwnProperty(mayBeExpando)) {
+                        delete file[mayBeExpando];
+                    }
+                }
+
+                instance.addFile(file);
                 // do not use our overriden addFile as we don't allow more than one file in the same tick
                 // instead use the native Dropzone's
-                Dropzone.prototype.addFile.call(instance, file);
+                // (warning: we squashed out its prototype with our extensions, so we have to use the original one)
+                // dropzoneOriginalPrototype.addFile.call(instance, file);
+                $container.one('thumbnailrendered', function () {
+                    dfd.resolve();
+                });
+
+                return dfd.promise();
             },
 
             /**
@@ -902,7 +926,7 @@
         };
 
         var dropzoneOriginalPrototype = Dropzone.prototype; // save original prototype
-        $.extend(true, Dropzone.prototype, extensions); // extends Dropzone prototype
+        Dropzone.prototype = $.extend(true, {}, Dropzone.prototype, extensions); // extends Dropzone prototype
 
         // cancel drag & drop outside our dropzones
         $(document.body).on("drop dragover", false);
@@ -916,6 +940,11 @@
          */
         $.fn.multidropzone = function (options) {
             var otherArgs = Array.prototype.slice.call(arguments, 1); // extract secondary parameters
+
+            // non-chained methods returning values
+            if (options === "getfile" || options === "addfile") {
+                return extensions[options].apply(null, otherArgs.concat(this.first()));
+            }
 
             return this.each(function (_, container) {
                 var $container = $(container);
