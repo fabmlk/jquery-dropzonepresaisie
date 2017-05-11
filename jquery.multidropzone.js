@@ -39,21 +39,24 @@
             // Filename or array of filenames to use for the uploaded files. Same rules as title, but with an array-like access notation appended
             // by default if numFiles > 1 (file[0], file[1], file[2]...)
             filename: "file",
-            // function that prompts the user about page dispatch if pdf's num pages is > numFiles
-            // @param {Object} o - object of the form
-            //                     {
-            //                       item: <jQuery object to the .multidropzone__item node that selected the pdf or the node itself>
-            //                       numPages: <number of pages in the pdf>
-            //                     }
-            // @param {Function} (Optional) done - callback to call with an object of the form
-            //                     {
-            //                       numPage <Integer representing a page number (1-based)>: <jQuery object to the .multidropzone__target node that should display this specific page>
-            //                       ...
-            //                     }
+            // function that prompts the user about page dispatch if a PDF document contains multiple pages and numFiles > 1
+            // @param {Object} o - object with the following properties:
+            //                        - numPages: {Integer} number of pages in the pdf
+            //                        - itemIdx: {Integer} 0-based index in the DOM order of the targeted item
+            //                        - numItems: {Integer} number of items inside the mulidropzone
+            // @param {Function} (Optional) done - callback to call with an object describing the dispatch:
+            //                        - key: {Integer} 1-based index of the page
+            //                        - value: {Integer} 0-based index in the DOM order of the targeted item
             // done() is optional if a promise is returned instead, resolved with the same parameter as the done() callback.
-            // By default, we simply display the first page inside the current target
+            // By default, we simply display the n-th page inside the n-th target in the DOM order.
             promptPages: function (o, done) {
-                done({1: o.item});
+                var map = {}, limit = Math.min(o.numPages, o.numItems);
+
+                for (var i = 0; i < limit; i++) {
+                    map[i + 1] = i;
+                }
+
+                done(map);
             },
             // delay to add to the upload progress cue before considering the upload is finished
             serversideDelayInSeconds: 0,
@@ -173,41 +176,42 @@
 
             return PDFJS.getDocument(file.url).then(function (pdf) {
                 if (pdf.numPages > 1) {
-                    var promptDfd = $.Deferred();
+                    var promptDfd = $.Deferred(),
+                        $items = $(".multidropzone__item", $container),
+                        ret = instance.options.promptPages({
+                            numPages: pdf.numPages,
+                            itemIdx: $item.index(),
+                            numItems: $items.length
+                        }, function (pageMap) {
+                            promptDfd.resolve(pageMap);
+                        })
+                    ;
 
-                    var ret = instance.options.promptPages({
-                        item: $item,
-                        numPages: pdf.numPages
-                    }, function (pageMap) {
-                        promptDfd.resolve(pageMap);
-                    });
-                    if (ret && typeof ret.then === "function") { // we got a promise
+                    if (ret && typeof ret.then === "function") { // we got a thenable
                         promptDfd = ret;
                     }
 
-                    return promptDfd.then(function (pageMaps) {
-                        if (!$.isPlainObject(pageMaps)) {
+                    return promptDfd.then(function (userPageMap) {
+                        if (!$.isPlainObject(userPageMap)) {
                             throw new Error("Expected object of the form {<numPage>: <target node>, ...}");
                         }
 
                         var pagePromises = [];
 
-                        file.pageMaps = $.extend({}, pageMaps); // save copy of pageMaps inside the file. See defaults options.
+                        // each file will save a reference to our own pageMap
+                        file.pageMap = {};
 
-                        // render each page as specified by pageMaps and keep some state inside the $item container
-                        $.each(pageMaps, function (numPage, item) {
+                        // render each page as specified by pageMap and keep some state inside the $item container
+                        $.each(userPageMap, function (numPage, itemIdx) {
                             var numPage = parseInt(numPage, 10);
 
-                            // target can be either a DOM node or jQuery wrapper.
-                            // Double wrapping is fine for jQuery anyway
-                            $item = $(item);
+                            $item = $items.eq(itemIdx);
 
-                            if (!$item.hasClass("multidropzone__item")) {
-                                throw new Error("Expected item to have a class of 'multidropzone__item'");
-                            }
+                            file.pageMap[numPage] = $item; // instead of item index, we store the $item directly
+
                             // each $item will keep an instance of the file so we can know from here where pages are being dispatched.
                             // So when a file will be replaced or removed, we can retrieve its file instance and run through
-                            // all pageMaps to discard the other instances and reset the UI.
+                            // all pageMap to discard the other instances and reset the UI.
                             addFileToItem(file, $item, $container)(file.size, file.name + ' (page n°' + numPage + ')');
 
                             // each page appears inside its own item. We simulate multiple files to the user when
@@ -402,7 +406,7 @@
                 return
             }
 
-            $.each(currentFile.pageMaps || [$item.get(0)], function (_, nextItem) {
+            $.each(currentFile.pageMap || [$item.get(0)], function (_, nextItem) {
                 $nextItem = $(nextItem);
                 var $canvas = $(".multidropzone__preview canvas", $nextItem);
                 var canvas = $canvas.get(0);
@@ -826,10 +830,9 @@
                 if (typeof instance.destroy === "function") { // not yet documented but exists in Dropzone's source code
                     // invoke parent
                     // (warning: we squashed out its prototype with our extensions, so we have to use the original one)
-                    dropzoneOriginalPrototype.destroy.call(instance);
+                    instance.destroy.call(instance);
                 }
                 $container.removeClass("multidropzone").empty();
-                Dropzone.prototype = dropzoneOriginalPrototype; // restore prototype
             },
 
             /**
@@ -878,7 +881,7 @@
             },
 
             /**
-             * Add a file programmatically to an item.
+             * Add an array of files programmatically to its items, inside the container, the index of the array matching the DOM order of the items.
              * Adding a file is asynchronous, so we return a promise to let the user know when we're through.
              * Warning: calling addfile multiple times on the same multidropzone instance without waiting for the resolved promise might cause invalid state!
              *          Reason: lastItemClickedOrDropped will be certainly assigned to the wrong item by the time our asynchronous rendering needs it.
@@ -888,45 +891,46 @@
              * @param {jQuery} $container
              * @returns {Promise}
              */
-            addfile: function (file, $item, $container) {
+            addfiles: function (files, $container) {
                 var instance = getDropzone($container),
-                    dfd = $.Deferred();
+                    dfd = $.Deferred(),
+                    $items = $(".multidropzone__item", $container),
+                    i = 0;
+                ;
 
-                lastItemClickedOrDropped = $item; // our whole process depends on it!
-
-                // remove previous file state by trimming the file from all expandos added either by Dropzone or our plugin
-                // this is mandatory or else Dropzone gets confused.
-                // Ex: adding a file that already has accepted = true will cause Dropzone to reject the file as getAcceptedFiles().length > maxFiles
-                for (var mayBeExpando in file) {
-                    if (file.hasOwnProperty(mayBeExpando)) {
-                        delete file[mayBeExpando];
+                function next() {
+                    if (i < files.length && files[i] instanceof File) {
+                        addFile(files[i], $items.eq(i));
+                        i++;
+                    } else {
+                        dfd.resolve();
                     }
                 }
 
-                instance.addFile(file);
-                // do not use our overriden addFile as we don't allow more than one file in the same tick
-                // instead use the native Dropzone's
-                // (warning: we squashed out its prototype with our extensions, so we have to use the original one)
-                // dropzoneOriginalPrototype.addFile.call(instance, file);
-                $container.one('thumbnailrendered', function () {
-                    dfd.resolve();
-                });
+                function addFile(file, $item) {
+                    lastItemClickedOrDropped = $item; // our whole process depends on it!
+
+                    // remove previous file state by trimming the file from all expandos added either by Dropzone or our plugin
+                    // this is mandatory or else Dropzone gets confused.
+                    // Ex: adding a file that already has accepted=true will cause Dropzone to reject the file as getAcceptedFiles().length > maxFiles
+                    for (var mayBeExpando in file) {
+                        if (file.hasOwnProperty(mayBeExpando)) {
+                            delete file[mayBeExpando];
+                        }
+                    }
+
+                    instance.addFile(file);
+
+                    $container.one('thumbnailrendered', function () {
+                        next();
+                    });
+                }
+
+                next();
 
                 return dfd.promise();
-            },
-
-            /**
-             * Returns a file associated to an item, if any
-             * @param {jQuery} $item
-             * @returns {File|undefined}
-             */
-            getfile: function ($item) {
-                return $item.data("file");
             }
         };
-
-        var dropzoneOriginalPrototype = Dropzone.prototype; // save original prototype
-        Dropzone.prototype = $.extend(true, {}, Dropzone.prototype, extensions); // extends Dropzone prototype
 
         // cancel drag & drop outside our dropzones
         $(document.body).on("drop dragover", false);
@@ -942,7 +946,7 @@
             var otherArgs = Array.prototype.slice.call(arguments, 1); // extract secondary parameters
 
             // non-chained methods returning values
-            if (options === "getfile" || options === "addfile") {
+            if (options === "addfiles") {
                 return extensions[options].apply(null, otherArgs.concat(this.first()));
             }
 
