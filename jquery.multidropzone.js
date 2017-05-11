@@ -36,6 +36,10 @@
             // If the array length is < numFiles or the array contains falsy values, this default text
             // is used as a replacement.
             title: "Déposez ou sélectionnez votre fichier",
+            // Dimensions of a preview element can be set explicitly here. Accepts:
+            //   - an array of the form [width in pixels, height in pixels]
+            //   - null (default): this will calculate the dimensions at runtime
+            previewDimensions: null,
             // Filename or array of filenames to use for the uploaded files. Same rules as title, but with an array-like access notation appended
             // by default if numFiles > 1 (file[0], file[1], file[2]...)
             filename: "file",
@@ -101,12 +105,13 @@
             uploadMultiple: true
         };
 
-        /*** events fired ***/
-        // beforeupload: fired before the upload to alter the request body and xhr params
-        //               Param: {Object} formData: the formData used for the upload
-        // uploadstart: fired when the upload is starting.
-        // uploadsuccess: fired when the upload is done and server responded without errors
-        // uploadfailure: fired when an error occurred during the upload or from the server's response
+        /*** events fired ***
+           * beforeupload: fired before the upload to alter the request body and xhr params
+                           Param: {Object} formData: the formData used for the upload
+           * uploadstart: fired when the upload is starting.
+           * uploadsuccess: fired when the upload is done and server responded without errors
+           * uploadfailure: fired when an error occurred during the upload or from the server's response
+         */
 
 
         /******************** utils function *********************/
@@ -170,6 +175,12 @@
          * @param {File} file
          * @param {jQuery} $item - the wrapped .multidropzone__item element where to display the pdf
          * @param {jQuery} $container - our custom closured plugin container
+         * @returns {Promise} representing the state of the rendering.
+         *
+         * Note on Promise: PDFJS uses its own polyfill if the native Promise API is not supported.
+         * As such, only a subset of Promises/A+ spec is implemented.
+         * This also means that if this function is called, the polyfill is loaded so we are safe to use the subset API
+         * (notably, we use Promise.all()).
          */
         function renderPdf(PDFJS, file, $item, $container) {
             var instance = getDropzone($container);
@@ -460,12 +471,17 @@
         /**
          * Get a thumbnail renderer based on file's mime type.
          * @param {String} mimeType
-         * @returns {Function} ({File} file, {jQuery} $container)
+         * @returns {Function} ({File} file, {jQuery} $container): jQuery Promise
+         *
+         * Note on jQuery Promise: as noted for renderPdf(), it returns either a native Promise or a polyfilled.
+         * But if pdf rendering is not supported by not providing the PDFJS object, it means that renderPdf() should never be called.
+         * As we want to support IE too, the convention is to return a jQuery Promise. Thus, even when renderPdf() is called, replace
+         * the Promise with a jQuery's one.
          */
         function getThumbnailRendererFromMimeType(mimeType) {
             if (lastItemClickedOrDropped == null) { // nothing to render
                 return function () {
-                    return Promise.resolve();
+                    return $.Deferred().resolve().promise();
                 };
             }
 
@@ -480,7 +496,7 @@
                     $img.removeAttr("width height");
                     image.alt = file.name;
                     image.src = file.url;
-                    return Promise.resolve();
+                    return $.Deferred().resolve().promise();
                 };
             }
 
@@ -488,7 +504,11 @@
                 return function (file, $container) { // pdf renderer
                     var instance = getDropzone($container);
 
-                    return renderPdf(instance.options.PDFJS, file, $item, $container);
+                    return renderPdf(instance.options.PDFJS, file, $item, $container).then(function () {
+                        return $.Deferred().resolve().promise();
+                    }, function (err) {
+                        return $.Deferred().reject(err).promise();
+                    });
                 };
             }
 
@@ -513,8 +533,8 @@
         function optionThumbnail(file, $container) {
             getThumbnailRendererFromMimeType(file.type)(file, $container).then(function () {
                 $container.trigger("thumbnailrendered");
-            }).catch(function (e) {
-                console.error(e);
+            }, function (err) {
+                console.error(err);
             });
         }
 
@@ -562,6 +582,7 @@
          * Why override: the native dropzone function does not try to make the image fit entirely in the container (as in css "100% auto" value for background-size).
          *               Instead, it simply crops its width to the container dimension (as in css "cover" value for background-size).
          * @param {File} file
+         * @param $container
          * @returns {
          *      srcWidth,   // sWidth
          *      srcHeight,  // sHeight
@@ -569,12 +590,22 @@
          *      trgHeight   // dHeight
          *     }
          */
-        function optionResize(file) {
-            var $target = $(lastItemClickedOrDropped).find(".multidropzone__target");
-            var maxWidth = $target.width();
-            var maxHeight = $target.height();
-            var width = file.width;
-            var height = file.height;
+        function optionResize(file, $container) {
+            var instance = getDropzone($container), $target,
+                maxWidth, maxHeight,
+                width, height;
+
+            if ($.isArray(instance.options.previewDimensions) && instance.options.previewDimensions.length === 2) {
+                maxWidth = instance.options.previewDimensions[0];
+                maxHeight = instance.options.previewDimensions[1];
+            } else {
+                $target = $(lastItemClickedOrDropped).find(".multidropzone__target");
+                maxWidth = $target.width();
+                maxHeight = $target.height();
+            }
+
+            width = file.width;
+            height = file.height;
 
             if (width / maxWidth > height / maxHeight) {
                 if (width > maxWidth) {
