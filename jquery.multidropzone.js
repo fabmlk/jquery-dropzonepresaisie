@@ -106,6 +106,7 @@
         };
 
         /*** events fired ***
+           * filechange: fired every time a file is selected.
            * beforeupload: fired before the upload to alter the request body and xhr params
                            Param: {Object} formData: the formData used for the upload
            * uploadstart: fired when the upload is starting.
@@ -305,6 +306,7 @@
                     setTimeout(function () { // next Tick, Dropzone sync calls are done, now it's our turn
                         try {
                             Dropzone.prototype.addFile.call(self, self.addFile.file); // parent's
+                            $container.trigger("filechange", self.addFile.file); // warning: this event is fired without waiting for the file to be rendered !
                         } finally {
                             // release filter in a finally clause, in case something went wrong.
                             // Note: if a fatal error was raise we're still fucked !
@@ -740,10 +742,11 @@
             });
 
             $btnStart.on("click", function () {
-                if ($(this).hasClass("js-disabled")) {
+                if ($btnStart.hasClass("js-disabled")) {
                     return false;
                 }
                 $container.addClass("multidropzone--uploading");
+                $btnStart.addClass("multidropzone__start--disabled");
                 instance.processQueue();
             });
 
@@ -856,7 +859,12 @@
              * @param {jQuery} $container
              */
             destroy: function ($container) {
-                var instance = getDropzone($container);
+                var instance = getDropzone($container),
+                    $items = $(".multidropzone__item", $container);
+
+                $.each($items, function () {
+                    $(this).removeData("file"); // remove all attached files
+                });
 
                 if (typeof instance.destroy === "function") { // not yet documented but exists in Dropzone's source code
                     // invoke parent
