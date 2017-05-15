@@ -306,7 +306,7 @@
                     setTimeout(function () { // next Tick, Dropzone sync calls are done, now it's our turn
                         try {
                             Dropzone.prototype.addFile.call(self, self.addFile.file); // parent's
-                            $container.trigger("filechange", self.addFile.file); // warning: this event is fired without waiting for the file to be rendered !
+                            $container.trigger("filechange", { file: self.addFile.file }); // warning: this event is fired without waiting for the file to be rendered !
                         } finally {
                             // release filter in a finally clause, in case something went wrong.
                             // Note: if a fatal error was raise we're still fucked !
@@ -948,18 +948,7 @@
 
                 function addFile(file, $item) {
                     lastItemClickedOrDropped = $item; // our whole process depends on it!
-
-                    // remove previous file state by trimming the file from all expandos added either by Dropzone or our plugin
-                    // this is mandatory or else Dropzone gets confused.
-                    // Ex: adding a file that already has accepted=true will cause Dropzone to reject the file as getAcceptedFiles().length > maxFiles
-                    for (var mayBeExpando in file) {
-                        if (file.hasOwnProperty(mayBeExpando)) {
-                            delete file[mayBeExpando];
-                        }
-                    }
-
                     instance.addFile(file);
-
                     $container.one('thumbnailrendered', function () {
                         next();
                     });
