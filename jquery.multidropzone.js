@@ -925,8 +925,7 @@
              * Warning: calling addfile multiple times on the same multidropzone instance without waiting for the resolved promise might cause invalid state!
              *          Reason: lastItemClickedOrDropped will be certainly assigned to the wrong item by the time our asynchronous rendering needs it.
              *
-             * @param {File} file
-             * @param {jQuery} $item
+             * @param {Array} files - array of files object. If an element is not an instance of File, it is ignored.
              * @param {jQuery} $container
              * @returns {Promise}
              */
